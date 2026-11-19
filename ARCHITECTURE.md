@@ -40,7 +40,7 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 | src-tauri/src/desktop/native_menu/external/ai/api_server.rs | 托盘/窗口/更新、菜单、外部编辑、凭据与 AI、本地认证服务 |
 | tests/、src-tauri/tests/ | 契约、保存队列、插件清理、真实文件测试 |
 | src/styles.css、print.css | 主题、布局、打印 |
-| assets/、src-tauri/icons/ | 独立图标源与各平台生成图标 |
+| docs/icons/、src-tauri/icons/ | 图标矢量源、生成脚本与各平台生成图标 |
 | manager.sh、scripts/、*.bat | 模板运行、检查、事务打包入口 |
 | docs/、根文档、.claude/ | 使用说明、AI 协作规则、计划与接力状态 |
 
@@ -102,6 +102,7 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 
 - 命令唯一来源 manager.sh，README 与 Windows 脚本保持一致。
 - 版本唯一来源 Cargo.toml；标识 dev.markfolio.app；Vite 端口读取 tauri.conf.json。
+- 主可执行文件名为 MarkFolio：Cargo `[[bin]]` 与 `tauri.conf.json` 的 `mainBinaryName` 保持一致；scripts/package.mjs 优先按 mainBinaryName、其次 `[[bin]]` 名称从 target 收集产物。
 - 产物 dist/web、dist/dev、dist/release；用户设置、插件、索引在系统 app_data_dir。
 - scripts/sync-assets.mjs 从锁定包同步 OCR/PDF/公式字体，再调用 third-party.mjs 收集许可/署名和 MPL/EPL 组件包源码。public/third-party 为生成资源；许可证缺失阻止构建。
 - scripts/package.mjs 在 Release/Debug 包中复制文档、插件示例、剪藏、第三方目录，并分别建立 unpack-manifest.json；安装器的 bundle.resources 带相同资源。
@@ -121,6 +122,7 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 - 原生测试使用独立 tests/library.rs；build.rs 给测试链接 Tauri 的 Common Controls v6 资源，避免 Windows 的 TaskDialogIndirect 入口缺失。应用和库的自动空测试已关闭，真实文件测试仍全部执行。
 - 搜索重建持有服务锁，极大目录的首次扫描可能需要等待；索引/已保存缓冲可限量。隔离 CSP/实际权限及生命周期由界面和 Rust 验证；可信模式仍拥有同页面完整能力。
 - 富文本仅规范化修改的块，特殊语法保留原源码；选区映射使用语法范围，扩展开关与行内代码决定是否隐藏标记。Fountain 预览/导出共用 fountain-js。
+- 图标由 docs/icons/_build.py 从 markfolio.svg 生成：无头 Edge 按 2048 渲染、洋红抠图后独立缩放；headless Edge 窗口高度比 `--window-size` 少约 92 px，脚本多开窗后再裁剪，避免底部截断。改图标后重跑脚本并核对 src-tauri/icons 与 docs/icons 输出一致。
 - 独立实现，未复制 Joplin/Obsidian 核心；源码插件移植需按各许可证审查。
 
 <!-- vibe-coding-starter 2026-11-11.1 · 文档体系版本标记 -->

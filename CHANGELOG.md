@@ -4,6 +4,11 @@
 
 ## [未发布]
 
+### 变更
+
+- 打包与安装后的可执行文件统一为 `MarkFolio.exe`，免安装包、快捷方式与进程名不再使用小写 `markfolio`。
+- 重新设计暖黄色系图标：叠层文档纸页、右上折角与 Markdown `M↓` 方块；源文件与生成脚本放在 `docs/icons/`，可用 `python docs/icons/_build.py` 复现各尺寸 PNG/ICO/ICNS。
+
 ## [0.2.0] - 2026-11-19
 
 ### 新增

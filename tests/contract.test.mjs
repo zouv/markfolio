@@ -23,6 +23,14 @@ test("版本号只在 Cargo.toml：tauri.conf.json 不写 version", () => {
   assert.match(read("src-tauri/Cargo.toml"), /^version = "\d+\.\d+\.\d+"/m);
 });
 
+test("打包文件名：Cargo [[bin]] 与 mainBinaryName 使用同一名称", () => {
+  const cargo = read("src-tauri/Cargo.toml");
+  const binSection = /\[\[bin\]\]([\s\S]*?)(?:\n\[|$)/.exec(cargo)?.[1] ?? "";
+  const bin = /^\s*name\s*=\s*"([^"]+)"/m.exec(binSection)?.[1];
+  assert.equal(typeof conf.mainBinaryName, "string");
+  assert.equal(bin, conf.mainBinaryName, "Cargo bin 与 tauri.conf.json 的 mainBinaryName 必须一致");
+});
+
 test("生产 CSP：禁止 unsafe-eval / 脚本 unsafe-inline，并放行 IPC", () => {
   const csp = conf.app?.security?.csp;
   assert.equal(typeof csp, "string");

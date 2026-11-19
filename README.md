@@ -51,7 +51,7 @@ sh manager.sh package # 出包到 dist/dev 与 dist/release（首次很慢）
 
 ## Windows 直接运行
 
-打包完成后，直接运行 dist/release/unpack/markfolio.exe，或使用 dist/release 中的安装包。第一次打开后点击“打开工作目录”选择笔记文件夹，使用顶部加号打开更多目录。插件安装与使用方法见 [docs/04-插件开发.md](docs/04-插件开发.md)。
+打包完成后，直接运行 dist/release/unpack/MarkFolio.exe，或使用 dist/release 中的安装包。第一次打开后点击“打开工作目录”选择笔记文件夹，使用顶部加号打开更多目录。插件安装与使用方法见 [docs/04-插件开发.md](docs/04-插件开发.md)。
 
 安装与免安装包都带使用说明、阅读时间插件、browser-extension/ 和 third-party/。“关于 MarkFolio”可查看依赖许可全文；相关组件源码一并提供。本项目自有代码未自行选择公开许可证。
 
@@ -91,7 +91,7 @@ src-tauri/                  # Rust 后端与 Tauri 配置
   src/commands.rs           # #[tauri::command] 命令实现
   capabilities/default.json # 窗口权限（默认只有 core:default）
   tauri.conf.json           # 窗口 / CSP / 打包 / identifier / devUrl
-  icons/                    # MarkFolio 生成图标，源文件在 assets/
+  icons/                    # MarkFolio 生成图标，源文件在 docs/icons/
 tests/contract.test.mjs     # node:test：配置与 IPC 契约
 scripts/                    # package.mjs / package-lib.mjs：出包、zip、SHA256 与事务发布
 dist/                       # 前端构建产物在 dist/web（不入库）；打包产物在 dist/dev 与 dist/release
@@ -109,7 +109,7 @@ HANDOFF.md                  # 会话接力（进行中状态）
 
 - **版本号**只在 `src-tauri/Cargo.toml` 的 `version`；`tauri.conf.json` 不写 `version`，前端经 `app_info` 命令读取。
 - **App 标识**在 `src-tauri/tauri.conf.json` 的 `identifier`，发布后不可改。
-- **图标**源文件在 assets/：`npm run tauri icon path/to/icon.png`（1024×1024）会重写 `src-tauri/icons/`。
+- **图标**源文件在 `docs/icons/`：执行 `python docs/icons/_build.py` 重新生成并写入 `src-tauri/icons/`（需要 Pillow、NumPy 与本机 Microsoft Edge）。
 - **IPC 契约**由 `tests/contract.test.mjs` 校验：Rust 命令、`generate_handler!` 注册、前端 `invoke` 必须三方一致。
 
 > AI 协作说明：本项目采用一套「AI 协作文档体系」，AI 代理开工请先读 [`AGENTS.md`](./AGENTS.md)。

@@ -35,9 +35,12 @@ const product = tauriConf.productName;
 if (!product) throw new Error('tauri.conf.json is missing productName');
 const cargo = readText(path.join(root, 'src-tauri/Cargo.toml'));
 const packageSection = /\[package\]([\s\S]*?)(?:\n\[|$)/.exec(cargo)?.[1] ?? '';
-const bin = /^\s*name\s*=\s*"([^"]+)"/m.exec(packageSection)?.[1];
+const binSection = /\[\[bin\]\]([\s\S]*?)(?:\n\[|$)/.exec(cargo)?.[1] ?? '';
+const packageName = /^\s*name\s*=\s*"([^"]+)"/m.exec(packageSection)?.[1];
+const configuredBin = typeof tauriConf.mainBinaryName === 'string' ? tauriConf.mainBinaryName : '';
+const bin = configuredBin || /^\s*name\s*=\s*"([^"]+)"/m.exec(binSection)?.[1] || packageName;
 const version = /^\s*version\s*=\s*"([^"]+)"/m.exec(packageSection)?.[1];
-if (!bin || !version) throw new Error('Cannot read package name/version from src-tauri/Cargo.toml');
+if (!bin || !version) throw new Error('Cannot read binary name/version from src-tauri/Cargo.toml');
 
 const platform = platformTag();
 const exe = process.platform === 'win32' ? '.exe' : '';

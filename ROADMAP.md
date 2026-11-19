@@ -2,7 +2,9 @@
 
 ## 当前状态（2026-11-19）
 
-0.2.0 功能实现完成，43 项 Node、33 项 Rust（含真实 OneNote/PDF）与 23 项界面测试通过，fmt/clippy/类型检查通过。Release/Debug、MSI/NSIS 和免安装包已生成；Windows 原生验收被用户 Esc 中止，最终产物校验和文档收尾尚未完成。验收测试设置已恢复。
+0.2.0 功能实现完成，44 项 Node、33 项 Rust（含真实 OneNote/PDF）与 23 项界面测试通过，fmt/clippy/类型检查通过。Release/Debug、MSI/NSIS 和免安装包已生成；Windows 原生验收被用户 Esc 中止，产物名/图标/SHA-256 已核对，交付仍待原生验收。验收测试设置已恢复。
+
+2026-11-19 后续改动：打包可执行文件改为 `MarkFolio.exe`，图标改为暖黄色系 folio 文档；图标源文件在 `docs/icons/`。已重新打包并核对安装器/免安装包中的程序名、图标与 SHA-256；原生验收仍暂停。
 
 ## 已完成实现
 
