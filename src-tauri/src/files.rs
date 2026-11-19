@@ -79,17 +79,21 @@ impl Library {
         let notes: Vec<_> = paths
             .iter()
             .filter(|p| is_markdown(Path::new(p)))
-            .filter_map(|p| self.read(id, p).ok().map(|d| (p, d.text)))
+            .filter_map(|p| {
+                self.read(id, p)
+                    .ok()
+                    .map(|d| (p, links::references(&d.text, p, &paths)))
+            })
             .collect();
         let mut result = Vec::new();
-        for path in paths.iter().filter(|p| !is_markdown(Path::new(p))) {
+        for path in paths
+            .iter()
+            .filter(|p| !is_markdown(Path::new(p)) && !is_locked_note(Path::new(p)))
+        {
             let file = self.resolve(id, path, true)?;
             let references = notes
                 .iter()
-                .filter(|(p, text)| {
-                    let relative = path.rsplit('/').next().unwrap_or(path);
-                    text.contains(relative) || text.contains(&links::relative_reference(p, path))
-                })
+                .filter(|(_, references)| references.contains(path))
                 .map(|(p, _)| (*p).clone())
                 .collect();
             result.push(AssetEntry {
@@ -106,7 +110,7 @@ impl Library {
             return Err(AppError::new("PATH", "不能删除工作目录及其配置"));
         }
         self.resolve(id, path, true)?;
-        let trash = self.ensure_directory(id,".markfolio/trash")?;
+        let trash = self.ensure_directory(id, ".markfolio/trash")?;
         let token = Uuid::new_v4().to_string();
         let slot = trash.join(&token);
         fs::create_dir(&slot)?;
@@ -127,6 +131,7 @@ impl Library {
             let _ = fs::remove_dir_all(slot);
             return Err(error.into());
         }
+        self.mark_changed(id, path);
         Ok(())
     }
     pub fn trash_entries(&self, id: &str) -> Result<Vec<TrashEntry>> {
@@ -175,9 +180,12 @@ impl Library {
                 "原位置已有文件，请先重命名或移动它",
             ));
         }
-        if let Some((parent,_)) = entry.path.rsplit_once('/') { self.ensure_directory(id,parent)?; }
+        if let Some((parent, _)) = entry.path.rsplit_once('/') {
+            self.ensure_directory(id, parent)?;
+        }
         let checked = self.resolve(id, &entry.path, false)?;
         fs::rename(actual.join("content"), checked)?;
+        self.mark_changed(id, &entry.path);
         fs::remove_file(actual.join("entry.json"))?;
         fs::remove_dir(actual)?;
         Ok(())

@@ -1,0 +1,572 @@
+[
+  {
+    "name": "文件",
+    "commands": [
+      {
+        "id": "workspace.open",
+        "title": "打开工作目录",
+        "shortcut": "Ctrl+O"
+      },
+      {
+        "id": "workspace.close",
+        "title": "关闭工作目录",
+        "shortcut": "Ctrl+Shift+W"
+      },
+      {
+        "id": "file.new",
+        "title": "新建笔记",
+        "shortcut": "Ctrl+N"
+      },
+      {
+        "id": "file.newTodo",
+        "title": "新建待办笔记",
+        "shortcut": "Ctrl+Alt+N"
+      },
+      {
+        "id": "folder.new",
+        "title": "新建文件夹",
+        "shortcut": "Ctrl+Shift+N"
+      },
+      {
+        "id": "file.save",
+        "title": "保存文档",
+        "shortcut": "Ctrl+S"
+      },
+      {
+        "id": "file.print",
+        "title": "打印 / 导出 PDF",
+        "shortcut": "Ctrl+P"
+      },
+      {
+        "id": "app.closeWindow",
+        "title": "关闭当前窗口",
+        "shortcut": "Ctrl+W"
+      },
+      {
+        "id": "app.quit",
+        "title": "退出",
+        "shortcut": "Ctrl+Q"
+      }
+    ]
+  },
+  {
+    "name": "编辑",
+    "commands": [
+      {
+        "id": "edit.undo",
+        "title": "撤销",
+        "shortcut": "Ctrl+Z"
+      },
+      {
+        "id": "edit.redo",
+        "title": "重做",
+        "shortcut": "Ctrl+Shift+Z"
+      },
+      {
+        "id": "edit.find",
+        "title": "查找 / 替换",
+        "shortcut": "Ctrl+F"
+      },
+      {
+        "id": "edit.pastePlain",
+        "title": "粘贴为纯文本",
+        "shortcut": "Ctrl+Shift+V"
+      },
+      {
+        "id": "edit.pasteMarkdown",
+        "title": "粘贴并转换为 Markdown",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.dateTime",
+        "title": "插入日期和时间",
+        "shortcut": ""
+      },
+      {
+        "id": "format.bold",
+        "title": "加粗",
+        "shortcut": "Ctrl+B"
+      },
+      {
+        "id": "format.italic",
+        "title": "斜体",
+        "shortcut": "Ctrl+I"
+      },
+      {
+        "id": "format.heading",
+        "title": "标题",
+        "shortcut": ""
+      },
+      {
+        "id": "format.link",
+        "title": "插入链接",
+        "shortcut": ""
+      },
+      {
+        "id": "format.code",
+        "title": "行内代码",
+        "shortcut": ""
+      },
+      {
+        "id": "format.codeBlock",
+        "title": "代码块",
+        "shortcut": ""
+      },
+      {
+        "id": "format.bullet",
+        "title": "无序列表",
+        "shortcut": ""
+      },
+      {
+        "id": "format.numbered",
+        "title": "有序列表",
+        "shortcut": ""
+      },
+      {
+        "id": "format.task",
+        "title": "待办勾选框",
+        "shortcut": ""
+      },
+      {
+        "id": "format.quote",
+        "title": "引用",
+        "shortcut": ""
+      },
+      {
+        "id": "format.rule",
+        "title": "分隔线",
+        "shortcut": ""
+      },
+      {
+        "id": "format.table",
+        "title": "插入表格",
+        "shortcut": ""
+      },
+      {
+        "id": "format.toc",
+        "title": "插入目录",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.moveLineUp",
+        "title": "向上移动选中行",
+        "shortcut": "Alt+Up"
+      },
+      {
+        "id": "edit.moveLineDown",
+        "title": "向下移动选中行",
+        "shortcut": "Alt+Down"
+      },
+      {
+        "id": "edit.copyLineUp",
+        "title": "向上复制选中行",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.copyLineDown",
+        "title": "向下复制选中行",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.deleteLine",
+        "title": "删除选中行",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.toggleComment",
+        "title": "切换注释",
+        "shortcut": "Ctrl+/"
+      },
+      {
+        "id": "edit.selectAll",
+        "title": "选中全部内容",
+        "shortcut": "Ctrl+A"
+      },
+      {
+        "id": "edit.selectLine",
+        "title": "选择当前行",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.indentMore",
+        "title": "增加缩进",
+        "shortcut": "Ctrl+]"
+      },
+      {
+        "id": "edit.indentLess",
+        "title": "减少缩进",
+        "shortcut": "Ctrl+["
+      },
+      {
+        "id": "edit.sortLines",
+        "title": "选中行升序排列",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.sortLinesReverse",
+        "title": "选中行降序排列",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.tableAddRow",
+        "title": "添加表格行",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.tableDeleteRow",
+        "title": "删除表格行",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.tableAddColumn",
+        "title": "添加表格列",
+        "shortcut": ""
+      },
+      {
+        "id": "edit.tableDeleteColumn",
+        "title": "删除表格列",
+        "shortcut": ""
+      }
+    ]
+  },
+  {
+    "name": "视图",
+    "commands": [
+      {
+        "id": "view.sidebar",
+        "title": "显示 / 隐藏侧栏",
+        "shortcut": ""
+      },
+      {
+        "id": "view.list",
+        "title": "显示 / 隐藏文件列表",
+        "shortcut": ""
+      },
+      {
+        "id": "view.cycle",
+        "title": "切换编辑布局",
+        "shortcut": "Ctrl+L"
+      },
+      {
+        "id": "view.editor",
+        "title": "切换 Markdown / 富文本编辑器",
+        "shortcut": ""
+      },
+      {
+        "id": "view.noteCounts",
+        "title": "显示笔记数量",
+        "shortcut": ""
+      },
+      {
+        "id": "view.todoTop",
+        "title": "未完成待办置顶",
+        "shortcut": ""
+      },
+      {
+        "id": "view.completedTodos",
+        "title": "显示已完成待办",
+        "shortcut": ""
+      },
+      {
+        "id": "view.tabFocus",
+        "title": "Tab 键移动焦点",
+        "shortcut": ""
+      },
+      {
+        "id": "view.reset",
+        "title": "重置布局",
+        "shortcut": ""
+      },
+      {
+        "id": "view.sortName",
+        "title": "笔记按名称排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.sortModified",
+        "title": "笔记按修改时间排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.sortCreated",
+        "title": "笔记按创建时间排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.sortSize",
+        "title": "笔记按大小排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.sortManual",
+        "title": "手动排列笔记",
+        "shortcut": ""
+      },
+      {
+        "id": "view.sortReverse",
+        "title": "反转笔记排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.perFolderSort",
+        "title": "按目录独立记住排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.folderSortName",
+        "title": "文件夹按名称排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.folderSortModified",
+        "title": "文件夹按修改时间排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.folderSortReverse",
+        "title": "反转文件夹排序",
+        "shortcut": ""
+      },
+      {
+        "id": "view.menu",
+        "title": "显示 / 隐藏菜单栏",
+        "shortcut": ""
+      },
+      {
+        "id": "view.zoomIn",
+        "title": "放大界面",
+        "shortcut": "Ctrl+Equal"
+      },
+      {
+        "id": "view.zoomOut",
+        "title": "缩小界面",
+        "shortcut": "Ctrl+-"
+      },
+      {
+        "id": "view.zoomReset",
+        "title": "重置界面缩放",
+        "shortcut": "Ctrl+0"
+      }
+    ]
+  },
+  {
+    "name": "转到",
+    "commands": [
+      {
+        "id": "nav.back",
+        "title": "后退",
+        "shortcut": "Alt+Left"
+      },
+      {
+        "id": "nav.forward",
+        "title": "前进",
+        "shortcut": "Alt+Right"
+      },
+      {
+        "id": "focus.search",
+        "title": "聚焦全文搜索",
+        "shortcut": "Ctrl+Shift+F"
+      },
+      {
+        "id": "focus.tree",
+        "title": "聚焦文件树",
+        "shortcut": ""
+      },
+      {
+        "id": "focus.list",
+        "title": "聚焦文档列表",
+        "shortcut": ""
+      },
+      {
+        "id": "focus.editor",
+        "title": "聚焦编辑器",
+        "shortcut": ""
+      },
+      {
+        "id": "focus.toolbar",
+        "title": "聚焦格式工具栏",
+        "shortcut": ""
+      },
+      {
+        "id": "nav.quickOpen",
+        "title": "快速打开笔记",
+        "shortcut": "Ctrl+K"
+      },
+      {
+        "id": "focus.preview",
+        "title": "聚焦预览",
+        "shortcut": ""
+      },
+      {
+        "id": "focus.title",
+        "title": "聚焦标题",
+        "shortcut": ""
+      },
+      {
+        "id": "focus.tabs",
+        "title": "聚焦工作目录页签",
+        "shortcut": ""
+      }
+    ]
+  },
+  {
+    "name": "笔记",
+    "commands": [
+      {
+        "id": "file.rename",
+        "title": "重命名文档",
+        "shortcut": "F2"
+      },
+      {
+        "id": "file.duplicate",
+        "title": "复制笔记",
+        "shortcut": "Ctrl+D"
+      },
+      {
+        "id": "file.move",
+        "title": "移动选中文件",
+        "shortcut": ""
+      },
+      {
+        "id": "file.delete",
+        "title": "选中文件移入回收站",
+        "shortcut": "Delete"
+      },
+      {
+        "id": "files.selectAll",
+        "title": "选中全部文件",
+        "shortcut": ""
+      },
+      {
+        "id": "file.attach",
+        "title": "附加文件",
+        "shortcut": ""
+      },
+      {
+        "id": "file.properties",
+        "title": "文档属性",
+        "shortcut": ""
+      },
+      {
+        "id": "file.external",
+        "title": "使用系统程序打开",
+        "shortcut": ""
+      },
+      {
+        "id": "file.statistics",
+        "title": "笔记内容统计",
+        "shortcut": ""
+      },
+      {
+        "id": "file.reveal",
+        "title": "在资源管理器中定位",
+        "shortcut": ""
+      },
+      {
+        "id": "file.chooseLink",
+        "title": "选择笔记链接",
+        "shortcut": "Ctrl+Alt+L"
+      },
+      {
+        "id": "file.copyLink",
+        "title": "复制笔记链接",
+        "shortcut": ""
+      },
+      {
+        "id": "file.window",
+        "title": "在独立窗口打开笔记",
+        "shortcut": ""
+      },
+      {
+        "id": "file.externalStop",
+        "title": "停止外部编辑会话",
+        "shortcut": ""
+      }
+    ]
+  },
+  {
+    "name": "工具",
+    "commands": [
+      {
+        "id": "index.rebuild",
+        "title": "重建搜索索引",
+        "shortcut": ""
+      },
+      {
+        "id": "app.settings",
+        "title": "选项",
+        "shortcut": "Ctrl+,"
+      },
+      {
+        "id": "app.plugins",
+        "title": "插件管理",
+        "shortcut": ""
+      },
+      {
+        "id": "app.palette",
+        "title": "命令面板",
+        "shortcut": "Ctrl+Shift+P"
+      },
+      {
+        "id": "tools.attachments",
+        "title": "附件管理",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.trash",
+        "title": "垃圾箱与恢复",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.transfer",
+        "title": "导入与导出",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.externalEditor",
+        "title": "选择外部编辑器",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.updates",
+        "title": "检查应用更新",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.ocr",
+        "title": "图片文字识别",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.whiteboard",
+        "title": "白板",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.lock",
+        "title": "本地密码锁定",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.ai",
+        "title": "AI 写作助手",
+        "shortcut": ""
+      },
+      {
+        "id": "tools.api",
+        "title": "本地 API / MCP / 浏览器剪藏",
+        "shortcut": ""
+      }
+    ]
+  },
+  {
+    "name": "帮助",
+    "commands": [
+      {
+        "id": "app.about",
+        "title": "关于 MarkFolio",
+        "shortcut": ""
+      }
+    ]
+  }
+]

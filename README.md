@@ -1,6 +1,6 @@
 # MarkFolio
 
-以本地 Markdown 文件为中心的文档管理工具。界面参考 Joplin，使用真实文件目录和多个工作目录页签，支持独立插件扩展。
+以 Joplin 为界面和交互参照，以 Obsidian 的本地文件目录模型为数据基础，开发自己的 Markdown 文档管理应用。使用 Tauri 2 + Rust + React，直接编辑原文件，多个工作目录同时打开并以页签切换。
 
 ## 用途 / 动机
 
@@ -8,13 +8,16 @@
 ## 当前可用功能
 
 - 本地目录与 Markdown 原文件直接编辑，多个工作目录同时打开并保持独立会话。
-- 三栏布局、原生菜单、可调面板、编辑/并排/预览、主题与编辑器选项。
-- 格式工具、撤销、查找替换、自动保存、外部修改冲突处理，以及支持的 UTF 编码/换行保留。
-- 文件与目录创建、重命名、移动、回收站、附件、内部链接、HTTPS 外部链接与工作目录内检索。
-- 文档列表多选、批量移动/删除与复制笔记；设置搜索、应用/取消、自定义快捷键和原生菜单状态联动。
-- 表格、任务勾选、脚注、代码高亮、公式和 Mermaid 预览；按工作目录启用的插件 SDK 与示例插件。
+- 三栏布局、原生菜单、可调面板顺序/大小、编辑/并排/预览、主题、缩放、中文/English。
+- Markdown/分块富文本、撤销、查找替换、HTML/图片粘贴、表格行列/选中行操作、自动保存、外部修改冲突处理与 UTF 编码/换行保留。
+- 文件树、全部笔记、详细列表、多选、复制/移动、独立目录排序、应用垃圾箱恢复、附件管理、PDF/音视频、链接维护与独立笔记窗口。
+- 标签、属性、待办/提醒/置顶、快速打开、字段/短语/日期/OR/排除检索和可重建的增量索引。
+- 设置搜索、应用/取消、自定义快捷键与导入导出；Vim/Emacs、拼写检查、预览字体、CSS、Markdown 扩展开关。
+- 公式、图表、脚注、上下标、定义列表、多行表格、自动目录、ABC/Fountain；JEX/RAW/ENEX/HTML/OneNote 转换及 Markdown/HTML/PDF 导出。
+- SDK 2 默认隔离插件、按目录权限/启停、卸载/安全模式、仓库校验与命令/菜单/工具栏/面板/表单/列表扩展。
+- 离线中英文 OCR、白板、本地密码锁定、托盘/全局唤起/深链、可配置更新与 AI、认证本地 API/MCP、浏览器剪藏扩展。
 
-当前版本仍需原生界面验收，完整 Joplin 菜单/设置/交互复刻尚未完成。富文本、标签、高级搜索和剪贴板图片等见 [ROADMAP.md](ROADMAP.md)。不提供同步、持久版本历史或自动备份；不能直接安装未修改的 Obsidian 插件。
+不提供同步、云分享、持久版本历史或自动备份；不能直接安装未修改的 Obsidian 插件。用户指定插件源码后再按 SDK 移植。验收结果和明确范围差异见 [ROADMAP.md](ROADMAP.md)。
 
 ## 快速开始
 
@@ -39,9 +42,9 @@ sh manager.sh package # 出包到 dist/dev 与 dist/release（首次很慢）
 | `web` | 仅启动 Vite 预览前端（浏览器里，IPC 不可用） |
 | `build` | 构建前端到 `dist/web/`（`tsc --noEmit` + `vite build`） |
 | `test` | 跑 tsc + node 契约测试 + cargo test（全部跑完再汇总） |
-| `test-ui` | 使用已安装 Chrome 验证设置、多选与快捷键界面；采用独立临时浏览器资料 |
-| `check` | `cargo fmt --check` + `cargo clippy -D warnings` + tsc |
-| `package` | 出包到 `dist/dev`（Debug 调试包）与 `dist/release`（`unpack/` + 免安装 zip + 安装包 + SHA256SUMS；首次很慢；`--skip-build` 复用已有构建） |
+| `test-ui` | 独立无头 Chrome 验证编辑、设置、排序、媒体、隔离插件与离线 OCR |
+| `check` | `cargo fmt --check` + `cargo clippy -D warnings` + tsc；`--fix` 先整理 Rust 格式 |
+| `package` | Release/Debug、安装器、免安装 zip、清单与 SHA256SUMS；附文档/插件示例/剪藏/许可；`--skip-build` 仅重新收集已有构建 |
 | `clean` | 清理 `dist/`、`src-tauri/target`、`.runtime`（`--all` 连 `node_modules`） |
 | `check-docs` | 文档体系机械体检（同 `sh check-docs.sh`） |
 | `help` | 显示帮助 |
@@ -49,6 +52,10 @@ sh manager.sh package # 出包到 dist/dev 与 dist/release（首次很慢）
 ## Windows 直接运行
 
 打包完成后，直接运行 dist/release/unpack/markfolio.exe，或使用 dist/release 中的安装包。第一次打开后点击“打开工作目录”选择笔记文件夹，使用顶部加号打开更多目录。插件安装与使用方法见 [docs/04-插件开发.md](docs/04-插件开发.md)。
+
+安装与免安装包都带使用说明、阅读时间插件、browser-extension/ 和 third-party/。“关于 MarkFolio”可查看依赖许可全文；相关组件源码一并提供。本项目自有代码未自行选择公开许可证。
+
+真实 OneNote/PDF 转换验证可分别设置 MARKFOLIO_TEST_ONENOTE 为测试样本目录、MARKFOLIO_TEST_DESKTOP=1 后执行 test。验收目录在被忽略的 .runtime/；本次交付针对 Windows，其他平台需单独构建验收。
 
 ## 双击脚本（Windows）
 

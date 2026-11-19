@@ -103,7 +103,14 @@ cmd_test() {
   local failed=""
   log "tsc --noEmit";  run_pm run typecheck || failed="${failed} typecheck"
   log "node:test";     run_pm test          || failed="${failed} node-test"
-  log "cargo test";    cargo test --manifest-path "${CARGO_MANIFEST}" || failed="${failed} cargo-test"
+  log "cargo test"
+  cargo test --manifest-path "${CARGO_MANIFEST}" || failed="${failed} cargo-test"
+  if [ -n "${MARKFOLIO_TEST_ONENOTE:-}" ]; then
+    cargo test --manifest-path "${CARGO_MANIFEST}" --test library native_onenote_sections -- --ignored || failed="${failed} onenote-test"
+  fi
+  if [ -n "${MARKFOLIO_TEST_DESKTOP:-}" ]; then
+    cargo test --manifest-path "${CARGO_MANIFEST}" --test library native_pdf_export -- --ignored || failed="${failed} pdf-test"
+  fi
   if [ -n "${failed}" ]; then
     err "未通过：${failed# }（各项都已跑完，见上方各自输出）"
     exit 1
@@ -114,6 +121,7 @@ cmd_test() {
 cmd_check() {
   require_node; require_rust
   local failed=""
+  if [ "${1:-}" = "--fix" ]; then cargo fmt --manifest-path "${CARGO_MANIFEST}" --all || failed="${failed} cargo-fmt-fix"; fi
   log "cargo fmt --check"; cargo fmt --manifest-path "${CARGO_MANIFEST}" --all -- --check || failed="${failed} cargo-fmt"
   log "cargo clippy";      cargo clippy --manifest-path "${CARGO_MANIFEST}" --all-targets -- -D warnings || failed="${failed} cargo-clippy"
   log "tsc --noEmit";      run_pm run typecheck || failed="${failed} typecheck"
@@ -168,7 +176,7 @@ markfolio — manager.sh（本项目所有命令的唯一来源）
   build        构建前端到 dist/web/（tsc --noEmit + vite build）
   test         跑 tsc + node 契约测试 + cargo test（全部跑完再汇总）
   test-ui      使用已安装 Chrome 验证设置、多选与快捷键界面
-  check        cargo fmt --check + cargo clippy -D warnings + tsc
+  check        cargo fmt --check + cargo clippy -D warnings + tsc（--fix 先整理 Rust 格式）
   package      出包到 dist/dev（Debug 调试包）与 dist/release（unpack/ + 免安装 zip + 安装包 + SHA256SUMS；--skip-build 复用已有构建）
   clean        清理 dist/、src-tauri/target、.runtime（--all 连 node_modules）
   check-docs   文档体系机械体检（同 sh check-docs.sh）

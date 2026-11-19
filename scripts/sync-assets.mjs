@@ -1,0 +1,13 @@
+import { mkdirSync,copyFileSync,readdirSync,cpSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+const root=fileURLToPath(new URL("../",import.meta.url));
+const output=join(root,"public/ocr");mkdirSync(join(output,"core"),{recursive:true});mkdirSync(join(output,"lang"),{recursive:true});
+copyFileSync(join(root,"node_modules/tesseract.js/dist/worker.min.js"),join(output,"worker.min.js"));
+for(const name of readdirSync(join(root,"node_modules/tesseract.js-core")))if(/^tesseract-core.*\.(js|wasm)$/.test(name))copyFileSync(join(root,"node_modules/tesseract.js-core",name),join(output,"core",name));
+for(const lang of ["eng","chi_sim"])copyFileSync(join(root,`node_modules/@tesseract.js-data/${lang}/4.0.0_best_int/${lang}.traineddata.gz`),join(output,`lang/${lang}.traineddata.gz`));
+const fonts=join(root,"public/export-fonts/katex");mkdirSync(fonts,{recursive:true});
+for(const name of readdirSync(join(root,"node_modules/katex/dist/fonts")))if(name.endsWith(".woff2"))copyFileSync(join(root,"node_modules/katex/dist/fonts",name),join(fonts,name));
+for(const name of ["cmaps","standard_fonts","wasm"])cpSync(join(root,"node_modules/pdfjs-dist",name),join(root,"public/pdf",name),{recursive:true});
+execFileSync(process.execPath,[join(root,"scripts/third-party.mjs")],{cwd:root,stdio:"inherit"});

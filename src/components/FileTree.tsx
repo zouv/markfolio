@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useState } from "react";
 import {
   FolderPlus,
@@ -27,7 +28,7 @@ export default function FileTree({
     y: number;
   }>();
   function render(directory: string, depth: number): React.ReactNode {
-    return (session.tree[directory] ?? []).map((entry) => (
+    return [...(session.tree[directory] ?? [])].sort((a,b)=>Number(b.isDirectory)-Number(a.isDirectory)||(a.isDirectory&&b.isDirectory?((state.settings.folderSort==="modified"?b.modified-a.modified:a.name.localeCompare(b.name,state.settings.locale,{numeric:true}))*(state.settings.folderSortReverse?-1:1)):a.name.localeCompare(b.name,state.settings.locale,{numeric:true}))).map((entry) => (
       <div key={entry.path}>
         <div
           role="treeitem"
@@ -39,6 +40,13 @@ export default function FileTree({
           }
           className={`tree-row ${session.selected.includes(entry.path) ? "selected" : ""}`}
           tabIndex={0}
+          onKeyDown={event=>{
+            const items=[...event.currentTarget.closest(".tree-scroll")!.querySelectorAll<HTMLElement>('[role="treeitem"]')];const index=items.indexOf(event.currentTarget);
+            if(event.key==="ArrowDown"||event.key==="ArrowUp"){event.preventDefault();items[Math.max(0,Math.min(items.length-1,index+(event.key==="ArrowDown"?1:-1)))]?.focus();}
+            else if(event.key==="ArrowRight"&&entry.isDirectory&&!session.expanded.includes(entry.path)){event.preventDefault();void state.expand(session.info.id,entry.path);}
+            else if(event.key==="ArrowLeft"&&entry.isDirectory&&session.expanded.includes(entry.path)){event.preventDefault();void state.expand(session.info.id,entry.path);}
+            else if(event.key==="Enter"||event.key===" "){event.preventDefault();event.currentTarget.click();}
+          }}
           style={{ paddingLeft: 12 + depth * 16 }}
           draggable={!session.mutating}
           onDragStart={(event) => {
@@ -67,7 +75,7 @@ export default function FileTree({
                 event.dataTransfer.getData("application/x-markfolio-entry"),
               ) as { workspace: string; paths: string[] };
               if (item.workspace !== session.info.id)
-                throw new Error("请在同一工作目录中移动文件");
+                throw new Error(t("请在同一工作目录中移动文件"));
               void operateFiles(item.workspace, item.paths, "move", entry.path)
                 .then((result) => state.setNotice(batchSummary(result)))
                 .catch((error) => state.setNotice(displayError(error)));
@@ -89,6 +97,7 @@ export default function FileTree({
             if (entry.isDirectory) state.setFolder(session.info.id, entry.path);
             state.selectFiles(session.info.id, [entry.path]);
             if (entry.isDirectory) return;
+            else if (entry.path.endsWith(".mflock")) {window.dispatchEvent(new CustomEvent("markfolio-unlock",{detail:{workspace:session.info.id,path:entry.path}}));return;}
             else if (markdownFile(entry.path))
               void state
                 .openDocument(session.info.id, entry.path)
@@ -117,7 +126,7 @@ export default function FileTree({
           {entry.isDirectory ? (
             <button
               className="tree-chevron"
-              aria-label={`展开 ${entry.name}`}
+              aria-label={t("展开 {0}", entry.name)}
               onClick={(event) => {
                 event.stopPropagation();
                 void state.expand(session.info.id, entry.path);
@@ -138,6 +147,7 @@ export default function FileTree({
             <IconForFile path={entry.path} />
           )}
           <span>{entry.name}</span>
+          {entry.isDirectory&&state.settings.showNoteCounts&&<small className="tree-note-count">{session.catalog.filter(n=>n.path.startsWith(entry.path+"/")).length}</small>}
           {!!session.documents[entry.path]?.dirty && (
             <span className="dirty-dot" />
           )}
@@ -151,10 +161,10 @@ export default function FileTree({
   return (
     <>
       <div className="sidebar-heading">
-        <span>文件</span>
+        <span>{t("文件")}</span>
         <div>
           <IconButton
-            label="新建文件夹"
+            label={t("新建文件夹")}
             onClick={() =>
               action({
                 type: "new-folder",
@@ -166,7 +176,7 @@ export default function FileTree({
             <FolderPlus size={15} />
           </IconButton>
           <IconButton
-            label="刷新文件树"
+            label={t("刷新文件树")}
             onClick={() => void state.refresh(session.info.id)}
           >
             <RefreshCw size={14} />
@@ -178,7 +188,7 @@ export default function FileTree({
         role="tree"
         tabIndex={0}
         aria-multiselectable="true"
-        aria-label="工作目录文件树"
+        aria-label={t("工作目录文件树")}
       >
         <button
           className={`tree-root ${session.folder === "" ? "root-selected" : ""}`}
@@ -196,7 +206,7 @@ export default function FileTree({
                 event.dataTransfer.getData("application/x-markfolio-entry"),
               );
               if (item.workspace !== session.info.id)
-                throw new Error("请在同一工作目录中移动文件");
+                throw new Error(t("请在同一工作目录中移动文件"));
               void operateFiles(item.workspace, item.paths, "move", "")
                 .then((result) => state.setNotice(batchSummary(result)))
                 .catch((error) => state.setNotice(displayError(error)));
@@ -212,10 +222,8 @@ export default function FileTree({
         {render("", 0)}
         {!session.tree[""]?.length && (
           <p className="tree-empty">
-            文件夹是空的
-            <br />
-            点击新建笔记开始记录
-          </p>
+            {t("文件夹是空的")}<br />
+            {t("点击新建笔记开始记录")}</p>
         )}
       </div>
       {menu && (
@@ -227,8 +235,8 @@ export default function FileTree({
           <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
             {session.selected.length > 1
               ? [
-                  ["batch-move", "移动选中项…"],
-                  ["batch-delete", "选中项移入回收站"],
+                  ["batch-move", t("移动选中项…")],
+                  ["batch-delete", t("选中项移入回收站")],
                 ].map(([type, label]) => (
                   <button
                     key={type}
@@ -246,9 +254,9 @@ export default function FileTree({
                   </button>
                 ))
               : [
-                  ["rename", "重命名"],
-                  ["move", "移动到…"],
-                  ["delete", "移入回收站"],
+                  ["rename", t("重命名")],
+                  ["move", t("移动到…")],
+                  ["delete", t("移入回收站")],
                 ].map(([type, label]) => (
                   <button
                     key={type}
@@ -279,8 +287,7 @@ export default function FileTree({
                   setMenu(undefined);
                 }}
               >
-                复制笔记
-              </button>
+                {t("复制笔记")}</button>
             )}
             <button
               onClick={() => {
@@ -288,8 +295,7 @@ export default function FileTree({
                 setMenu(undefined);
               }}
             >
-              使用系统程序打开
-            </button>
+              {t("使用系统程序打开")}</button>
           </div>
         </>
       )}

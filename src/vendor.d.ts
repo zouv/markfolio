@@ -8,3 +8,5 @@ declare module "markdown-it-ins";
 declare module "markdown-it-task-lists";
 declare module "markdown-it-texmath";
 declare module "markdown-it-multimd-table";
+declare module "pdfjs-dist/legacy/build/pdf.mjs" { export * from "pdfjs-dist"; }
+declare module "pdfjs-dist/legacy/build/pdf.worker.mjs" { export const WorkerMessageHandler: unknown; }

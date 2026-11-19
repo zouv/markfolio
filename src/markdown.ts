@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import MarkdownIt from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import footnotes from "markdown-it-footnote";
@@ -11,17 +12,20 @@ import deflist from "markdown-it-deflist";
 import abbr from "markdown-it-abbr";
 import ins from "markdown-it-ins";
 import multimd from "markdown-it-multimd-table";
+import { splitFrontMatter } from "./metadata";
+import type { MarkdownExtensions } from "./types";
 
 export function prepareMarkdown(text: string): string {
-  return text
-    .replace(/^---\n[\s\S]*?\n---(?:\n|$)/, (match) =>
-      "\n".repeat(match.split("\n").length - 1),
-    )
-    .replace(/\[\[([^\]\n]+)\]\]/g, (_all, value: string) => {
+  const front=splitFrontMatter(text);const source=front.header?"\n".repeat(front.header.split("\n").length-1)+front.body:text;
+  const starts=[0];for(let i=0;i<source.length;i++)if(source[i]==="\n")starts.push(i+1);
+  const protectedRanges=new MarkdownIt({html:true}).parse(source,{}).filter(token=>["fence","code_block"].includes(token.type)&&token.map).map(token=>({from:starts[token.map![0]]??source.length,to:starts[token.map![1]]??source.length}));
+  function rewrite(value:string){return value.replace(/(`+)([\s\S]*?)\1(?!`)|(?<!\\)\[\[([^\]\n]+)\]\]/g, (all,_ticks,_code,value:string|undefined) => {
+      if(value===undefined)return all;
       const [target, label] = value.split("|");
       if (target.toLowerCase() === "toc") return "[toc]";
       return `[${label ?? target}](markfolio-wiki:${encodeURIComponent(target)})`;
-    });
+    });}
+  let cursor=0,result="";for(const range of protectedRanges){result+=rewrite(source.slice(cursor,range.from))+source.slice(range.from,range.to);cursor=range.to;}return result+rewrite(source.slice(cursor));
 }
 export function headingSlug(text: string): string {
   return (
@@ -32,7 +36,8 @@ export function headingSlug(text: string): string {
       .replace(/\s+/g, "-") || "section"
   );
 }
-export function createRenderer(math = false, options: { rawHtml?: boolean; extended?: boolean } = {}) {
+export function createRenderer(math = false, options: { rawHtml?: boolean; extended?: boolean; extensions?:Partial<MarkdownExtensions> } = {}) {
+  const enabled=(key:keyof MarkdownExtensions)=>options.extensions?.[key]!==false;
   const md = new MarkdownIt({
     html: options.rawHtml ?? false,
     linkify: true,
@@ -42,12 +47,11 @@ export function createRenderer(math = false, options: { rawHtml?: boolean; exten
         ? hljs.highlight(code, { language }).value
         : "";
     },
-  })
-    .use(taskLists, { enabled: true })
-    .use(footnotes);
+  }).use(taskLists, { enabled: true });
+  if(enabled("footnotes"))md.use(footnotes);
   if (options.extended !== false) {
     Object.assign(md.utils, { assign: Object.assign });
-    md.use(mark).use(sub).use(sup).use(deflist).use(abbr).use(ins).use(multimd, { multiline: true, rowspan: true, headerless: true });
+    if(enabled("mark"))md.use(mark);if(enabled("sub"))md.use(sub);if(enabled("sup"))md.use(sup);if(enabled("deflist"))md.use(deflist);if(enabled("abbr"))md.use(abbr);if(enabled("ins"))md.use(ins);if(enabled("multiTable"))md.use(multimd, { multiline: true, rowspan: true, headerless: true });
   }
   if (math)
     md.use(texmath, {
@@ -82,8 +86,8 @@ export function createRenderer(math = false, options: { rawHtml?: boolean; exten
         }
     });
     const toc = state.tokens.flatMap((token,index) => token.type === "heading_open" ? [`<li style="margin-left:${(Number(token.tag.slice(1))-1)*16}px"><a href="#${token.attrGet("id")}">${md.utils.escapeHtml(state.tokens[index+1].content)}</a></li>`] : []).join("");
-    for (const token of state.tokens) if(token.type === "inline" && /^\[toc\]$/i.test(token.content.trim())) {
-      const child = new state.Token("html_inline", "", 0); child.content = `<nav class="automatic-toc" aria-label="文档目录"><ul>${toc}</ul></nav>`; token.children = [child];
+    for (const token of state.tokens) if(enabled("toc")&&token.type === "inline" && /^\[toc\]$/i.test(token.content.trim())) {
+      const child = new state.Token("html_inline", "", 0); child.content = t("<nav class=\"automatic-toc\" aria-label=\"文档目录\"><ul>{0}</ul></nav>", toc); token.children = [child];
     }
   });
   // Keep every image inert until the Rust file service resolves a local attachment.

@@ -115,7 +115,7 @@
 - 仅预览前端：`sh manager.sh web`（浏览器打开 Vite 地址；IPC 不可用，只适合调样式）
 - 测试：`sh manager.sh test`（tsc + node:test 契约测试 + cargo test，三项都跑完再汇总）
 - 界面测试：`sh manager.sh test-ui`（需已安装 Chrome；独立无头浏览器验证合成文档界面，不代替原生文件验收）
-- 交付前检查：`sh manager.sh check`（cargo fmt --check + cargo clippy -D warnings + tsc）
+- 交付前检查：`sh manager.sh check`（cargo fmt --check + cargo clippy -D warnings + tsc；`--fix` 先整理 Rust 格式）
 - 打包：`sh manager.sh package`（`tauri build` 与 `tauri build --debug`；产物在 `dist/dev` 与 `dist/release`，包含安装包、`unpack/`、zip 与 SHA256SUMS，首次编译很慢）
 - Windows 资源管理器里双击：`setup.bat` `dev.bat` `build.bat` `test.bat` `package.bat` `clean.bat`
 

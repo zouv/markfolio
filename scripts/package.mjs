@@ -78,6 +78,15 @@ function copyRunnable(configuration, destination) {
   copyFile(binary, path.join(destination, path.basename(binary)));
 }
 
+function copyDocumentation(destination) {
+  for (const name of ['README.md', 'CHANGELOG.md', 'ROADMAP.md']) copyFile(path.join(root, name), path.join(destination, name));
+  for (const [source, target] of [['docs', 'docs'], ['browser-extension', 'browser-extension'], ['examples/plugins', 'examples/plugins'], ['public/third-party', 'third-party']]) {
+    const directory = path.join(root, source);
+    if (!fs.existsSync(directory)) throw new Error(`Missing distribution documentation: ${source}`);
+    copyDir(directory, path.join(destination, target));
+  }
+}
+
 function writeInfo(directory, mode) {
   const lines = [
     `Product: ${product}`,
@@ -86,6 +95,7 @@ function writeInfo(directory, mode) {
     `Mode: ${mode}`,
     `Built: ${new Date().toISOString()}`,
     `Git: ${tryExec('git', ['-C', root, 'rev-parse', '--short', 'HEAD'])}`,
+    `Working tree: ${tryExec('git', ['-C', root, 'status', '--porcelain']) ? 'modified' : 'clean'}`,
     `Node: ${process.version}`,
     `Rust: ${tryExec('cargo', ['--version'])}`,
   ];
@@ -143,8 +153,10 @@ try {
 
   console.log('[3/5] collect debug and release artifacts');
   copyRunnable('debug', devSource);
+  copyDocumentation(devSource);
   writeInfo(devSource, 'Debug');
   copyRunnable('release', releaseUnpack);
+  copyDocumentation(releaseUnpack);
   writeInfo(releaseUnpack, 'Release');
 
   const installers = [];
@@ -156,6 +168,9 @@ try {
   }
 
   console.log('[4/5] manifest and zip');
+  writeManifest(devSource, path.join(devSource, 'unpack-manifest.json'), {
+    product, version, mode: 'Debug', platform,
+  });
   writeManifest(releaseUnpack, path.join(releaseUnpack, 'unpack-manifest.json'), {
     product, version, mode: 'Release', platform,
   });

@@ -26,7 +26,7 @@ test("版本号只在 Cargo.toml：tauri.conf.json 不写 version", () => {
 test("生产 CSP：禁止 unsafe-eval / 脚本 unsafe-inline，并放行 IPC", () => {
   const csp = conf.app?.security?.csp;
   assert.equal(typeof csp, "string");
-  assert.ok(!csp.includes("unsafe-eval"), "生产 CSP 不允许 unsafe-eval");
+  assert.ok(!csp.split(/[;\s]+/).includes("'unsafe-eval'"), "生产 CSP 不允许 JavaScript unsafe-eval");
   const scriptSrc = csp
     .split(";")
     .map((part) => part.trim())
@@ -45,12 +45,12 @@ test("生产 CSP：禁止 unsafe-eval / 脚本 unsafe-inline，并放行 IPC", (
 test("开发 CSP 只放宽 Vite / HMR，仍然禁止 unsafe-eval", () => {
   const dev = conf.app?.security?.devCsp;
   assert.equal(typeof dev, "string");
-  assert.ok(!dev.includes("unsafe-eval"));
+  assert.ok(!dev.split(/[;\s]+/).includes("'unsafe-eval'"));
 });
 
 test("capabilities：窗口名正确，默认只含 core 权限", () => {
   const cap = readJson("src-tauri/capabilities/default.json");
-  assert.deepEqual(cap.windows, ["main"]);
+  assert.deepEqual(cap.windows, ["main", "note-*"]);
   for (const permission of cap.permissions) {
     assert.match(
       permission,

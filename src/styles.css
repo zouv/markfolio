@@ -582,6 +582,8 @@ p {
   background: var(--border);
   margin: 0 5px;
 }
+
+.tree-note-count { margin-left: auto; color: var(--muted); font-size: 11px; padding-right: 8px; }
 .heading-icon {
   font-weight: 700;
   font-size: 15px;
@@ -1538,8 +1540,3 @@ kbd {
 .image-reader {overflow:auto;max-height:62vh;}
 .pdf-reader {height:65vh;display:flex;flex-direction:column;}
 .pdf-pages {flex:1;overflow:auto;background:var(--background);padding:12px;}
-.fountain-script {white-space:pre-wrap;font-family:'Courier New',monospace;}
-.fountain-script .scene {font-weight:bold;margin-top:2em;}
-.fountain-script .character {margin-left:40%;margin-top:1em;}
-.fountain-script .dialogue {margin:0 20%;}
-.fountain-script .parenthetical {margin-left:30%;}

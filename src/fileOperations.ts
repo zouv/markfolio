@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import * as defaultApi from "./api";
 import { useApp, type State } from "./store";
 import { displayError, fileName, joinPath } from "./types";
@@ -26,9 +27,9 @@ export async function operateFiles(
 ): Promise<BatchResult> {
   const initial = store.getState().sessions[workspace];
   if (!initial || initial.mutating)
-    throw new Error("工作目录不可用或正在处理文件");
+    throw new Error(t("工作目录不可用或正在处理文件"));
   const roots = operationRoots(paths);
-  if (!roots.length) throw new Error("请先选择文件");
+  if (!roots.length) throw new Error(t("请先选择文件"));
   const setSession = (patch: Partial<typeof initial>) =>
     store.setState((state) => {
       const session = state.sessions[workspace];
@@ -47,7 +48,7 @@ export async function operateFiles(
     for (const path of roots) {
       try {
         let session = store.getState().sessions[workspace];
-        if (!session) throw new Error("工作目录已关闭");
+        if (!session) throw new Error(t("工作目录已关闭"));
         const affected = Object.keys(session.documents).filter((item) =>
           contains(path, item),
         );
@@ -58,7 +59,7 @@ export async function operateFiles(
               session.documents[item].dirty || session.documents[item].saving,
           )
         )
-          throw new Error("包含未保存编辑，请先保存后删除");
+          throw new Error(t("包含未保存编辑，请先保存后删除"));
         if (operation !== "delete")
           for (const item of operation === "move" ? Object.keys(session.documents) : affected)
             await store.getState().save(workspace, item);
@@ -67,11 +68,11 @@ export async function operateFiles(
           target = await api.duplicateEntry(workspace, path);
         else if (operation === "move") {
           target = joinPath(directory, fileName(path));
-          if (target === path) throw new Error("文件已在目标文件夹中");
+          if (target === path) throw new Error(t("文件已在目标文件夹中"));
           await api.renameEntry(workspace, path, target);
         } else await api.deleteEntry(workspace, path);
         session = store.getState().sessions[workspace];
-        if (!session) throw new Error("工作目录已关闭");
+        if (!session) throw new Error(t("工作目录已关闭"));
         if (operation !== "duplicate") {
           const translate = (item: string) =>
             contains(path, item)
@@ -126,7 +127,7 @@ export async function moveEntry(
   const state = useApp.getState();
   const session = state.sessions[workspace];
   if (!session || session.mutating)
-    throw new Error("工作目录不可用或正在处理文件");
+    throw new Error(t("工作目录不可用或正在处理文件"));
   useApp.setState((s) => ({
     sessions: { ...s.sessions, [workspace]: { ...session, mutating: true } },
   }));
@@ -171,5 +172,5 @@ export async function moveEntry(
   }
 }
 export function batchSummary(result: BatchResult): string {
-  return `完成 ${result.completed.length} 项${result.failed.length ? `，失败 ${result.failed.length} 项：${result.failed.map((item) => `${item.path}：${item.message}`).join("；")}` : ""}`;
+  return t("完成 {0} 项{1}", result.completed.length, result.failed.length ? `，失败 ${result.failed.length} 项：${result.failed.map((item) => `${item.path}：${item.message}`).join("；")}` : "");
 }

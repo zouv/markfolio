@@ -26,8 +26,21 @@ export function openWorkspace(): Promise<WorkspaceInfo | null> {
 export function closeWorkspace(workspaceId: string): Promise<null> {
   return invoke<null>("close_workspace", { workspaceId });
 }
-export function saveSettings(settings: Settings): Promise<null> {
-  return invoke<null>("save_settings", { settings });
+export function isMainWindow(): boolean {
+  return typeof location === "undefined" || !new URLSearchParams(location.search).has("note");
+}
+export function windowContext(): {workspace:string|null;note:string|null} {
+  const params=new URLSearchParams(typeof location==="undefined"?"":location.search);
+  return {workspace:params.get("workspace"),note:params.get("note")};
+}
+export function saveSettings(settings: Settings, baseSettings?: Settings): Promise<Settings> {
+  return invoke<Settings>("save_settings", { settings, baseSettings });
+}
+export function requestExit(): Promise<string> {
+  return invoke<string>("request_exit");
+}
+export function exitResponse(requestId: string, ready: boolean): Promise<null> {
+  return invoke<null>("exit_response", { requestId, ready });
 }
 export type MenuUpdate = {
   id: string;
@@ -90,8 +103,8 @@ export function duplicateEntry(
 ): Promise<string> {
   return invoke<string>("duplicate_entry", { workspaceId, path });
 }
-export function rebuildIndex(workspaceId: string): Promise<number> {
-  return invoke<number>("rebuild_index", { workspaceId });
+export function rebuildIndex(workspaceId: string, force = false): Promise<number> {
+  return invoke<number>("rebuild_index", { workspaceId, force });
 }
 export function searchDocuments(
   workspaceId: string,
@@ -154,8 +167,8 @@ export function exportDocuments(files:TransferFile[],format:"md"|"html"|"pdf"):P
 export function uninstallPlugin(pluginId:string):Promise<null> {
   return invoke<null>("uninstall_plugin",{pluginId});
 }
-export function pluginFileRequest(workspaceId:string,pluginId:string,method:string,path:string,text=""):Promise<unknown> {
-  return invoke<unknown>("plugin_file_request",{workspaceId,pluginId,method,path,text});
+export function pluginFileRequest(workspaceId:string,pluginId:string,method:string,path:string,text="",expectedVersion?:string):Promise<unknown> {
+  return invoke<unknown>("plugin_file_request",{workspaceId,pluginId,method,path,text,expectedVersion});
 }
 export function pluginRepository(url:string):Promise<unknown> {
   return invoke<unknown>("plugin_repository",{url});
@@ -163,3 +176,44 @@ export function pluginRepository(url:string):Promise<unknown> {
 export function installRemotePlugin(url:string,digest:string):Promise<PluginBundle> {
   return invoke<PluginBundle>("install_remote_plugin",{url,digest});
 }
+export type Release = { version:string;url:string;sha256:string;notes:string };
+export function desktopPreferences(preferences:{zoom:number;menuVisible:boolean;globalShortcut:string;tray:boolean;locale:string}):Promise<null> {
+  return invoke<null>("desktop_preferences",{preferences});
+}
+export function openNoteWindow(workspaceId:string,path:string):Promise<null> {
+  return invoke<null>("open_note_window",{workspaceId,path});
+}
+export function notifyReminder(title:string):Promise<null> {
+  return invoke<null>("notify_reminder",{title});
+}
+export function checkUpdate(url:string):Promise<Release> {
+  return invoke<Release>("check_update",{url});
+}
+export function installUpdate(release:Release):Promise<null> {
+  return invoke<null>("install_update",{release});
+}
+export function selectExternalEditor():Promise<string|null> {
+  return invoke<string|null>("select_external_editor");
+}
+export type ExternalSession={workspace:string;path:string};
+export function externalEdit(workspaceId:string,path:string,action:"start"|"stop"):Promise<ExternalSession[]> {
+  return invoke<ExternalSession[]>("external_edit",{workspaceId,path,action});
+}
+export function externalEditorSessions():Promise<ExternalSession[]> {
+  return invoke<ExternalSession[]>("external_editor_sessions");
+}
+export function revealEntry(workspaceId:string,path:string):Promise<null> {
+  return invoke<null>("reveal_entry",{workspaceId,path});
+}
+export function lockDocument(workspaceId:string,path:string,action:"lock"|"unlock"|"decrypt"|"close",password="",expectedVersion?:string):Promise<string> {
+  return invoke<string>("lock_document",{workspaceId,path,action,password,expectedVersion});
+}
+export type AiConfig={endpoint:string;model:string;hasKey:boolean};
+export type ApiStatus={running:boolean;port:number;token:string;workspace:string;writable:boolean};
+export function aiConfig():Promise<AiConfig>{return invoke<AiConfig>("ai_config");}
+export function configureAi(endpoint:string,model:string,apiKey:string,removeKey=false):Promise<AiConfig>{return invoke<AiConfig>("configure_ai",{endpoint,model,apiKey,removeKey});}
+export function aiGenerate(prompt:string,context:string):Promise<string>{return invoke<string>("ai_generate",{prompt,context});}
+export function localApiStatus():Promise<ApiStatus>{return invoke<ApiStatus>("local_api_status");}
+export function localApiControl(workspaceId:string,port:number,writable:boolean,action:"start"|"stop"):Promise<ApiStatus>{return invoke<ApiStatus>("local_api_control",{workspaceId,port,writable,action});}
+export function initialLinks():Promise<string[]>{return invoke<string[]>("initial_links");}
+export function loadRemoteImage(url:string):Promise<string>{return invoke<string>("load_remote_image",{url});}

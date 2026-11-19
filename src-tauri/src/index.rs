@@ -78,10 +78,21 @@ pub fn connect(library: &Library, id: &str) -> Result<Connection> {
             .join("indexes")
             .join(format!("{id}.sqlite")),
     )?;
-    db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS notes(path TEXT PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,modified INTEGER NOT NULL,created INTEGER NOT NULL,size INTEGER NOT NULL,stamp TEXT NOT NULL,metadata TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notes_modified ON notes(modified);")?;
+    db.execute_batch("PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS notes(path TEXT PRIMARY KEY,title TEXT NOT NULL,body TEXT NOT NULL,modified INTEGER NOT NULL,created INTEGER NOT NULL,size INTEGER NOT NULL,stamp TEXT NOT NULL,metadata TEXT NOT NULL); CREATE INDEX IF NOT EXISTS notes_modified ON notes(modified);")?;
+    let legacy: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='files')",
+        [],
+        |r| r.get(0),
+    )?;
+    if legacy {
+        db.execute_batch("DROP TABLE files; VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+    }
     Ok(db)
 }
 pub fn reindex(library: &Library, id: &str) -> Result<usize> {
+    refresh(library, id, None)
+}
+pub fn refresh(library: &Library, id: &str, changes: Option<&HashSet<String>>) -> Result<usize> {
     let root = library.root(id)?;
     let mut db = connect(library, id)?;
     let cached: HashMap<String, String> = {
@@ -90,71 +101,95 @@ pub fn reindex(library: &Library, id: &str) -> Result<usize> {
         rows.collect::<std::result::Result<_, _>>()?
     };
     let transaction = db.transaction()?;
-    let mut stack = vec![root.to_path_buf()];
+    let affected = |path: &str| {
+        changes.is_none_or(|changes| {
+            changes
+                .iter()
+                .any(|p| path == p || path.starts_with(&format!("{p}/")))
+        })
+    };
+    let mut stack = if let Some(changes) = changes {
+        changes
+            .iter()
+            .filter_map(|p| checked_relative(p).ok())
+            .map(|p| root.join(p))
+            .collect()
+    } else {
+        vec![root.to_path_buf()]
+    };
     let mut seen = HashSet::new();
-    while let Some(directory) = stack.pop() {
-        for item in fs::read_dir(directory)? {
-            let item = item?;
-            if hidden(&item.file_name().to_string_lossy()) {
-                continue;
+    while let Some(item_path) = stack.pop() {
+        let Ok(stat) = fs::symlink_metadata(&item_path) else {
+            continue;
+        };
+        if hidden(&item_path.file_name().unwrap_or_default().to_string_lossy()) && item_path != root
+        {
+            continue;
+        }
+        if stat.file_type().is_symlink() {
+            continue;
+        }
+        if stat.is_dir() {
+            for entry in fs::read_dir(item_path)? {
+                stack.push(entry?.path());
             }
-            let kind = item.file_type()?;
-            if kind.is_symlink() {
-                continue;
-            }
-            if kind.is_dir() {
-                stack.push(item.path());
-                continue;
-            }
-            if !is_markdown(&item.path()) {
-                continue;
-            }
-            let stat = item.metadata()?;
-            if stat.len() > MAX_DOCUMENT {
-                continue;
-            }
-            let path = relative_string(
-                item.path()
-                    .strip_prefix(root)
-                    .map_err(|_| AppError::new("PATH", "索引路径无效"))?,
-            );
-            let stamp = format!(
-                "{}:{}",
-                stat.modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                    .map_or(0, |d| d.as_nanos()),
-                stat.len()
-            );
-            seen.insert(path.clone());
-            if cached.get(&path) == Some(&stamp) {
-                continue;
-            }
+            continue;
+        }
+        if !is_markdown(&item_path) && !is_locked_note(&item_path) {
+            continue;
+        }
+        if stat.len() > MAX_DOCUMENT {
+            continue;
+        }
+        let path = relative_string(
+            item_path
+                .strip_prefix(root)
+                .map_err(|_| AppError::new("PATH", "索引路径无效"))?,
+        );
+        let stamp = format!(
+            "{}:{}",
+            stat.modified()
+                .ok()
+                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_nanos()),
+            stat.len()
+        );
+        seen.insert(path.clone());
+        if cached.get(&path) == Some(&stamp) {
+            continue;
+        }
+        // Encrypted notes remain visible, but decrypted content never enters SQLite.
+        let text = if is_locked_note(&item_path) {
+            String::new()
+        } else {
             let Ok(doc) = library.read(id, &path) else {
                 continue;
             };
-            let properties = metadata(&doc.text);
-            let title = if properties.title.is_empty() {
-                item.path()
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned()
-            } else {
-                properties.title.clone()
-            };
-            let created = stat
-                .created()
-                .ok()
-                .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-                .map_or(0, |d| d.as_millis() as u64);
-            let json = serde_json::to_string(&properties)
-                .map_err(|_| AppError::new("INDEX", "无法解析文档属性"))?;
-            transaction.execute("INSERT INTO notes(path,title,body,modified,created,size,stamp,metadata) VALUES(?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(path) DO UPDATE SET title=excluded.title,body=excluded.body,modified=excluded.modified,created=excluded.created,size=excluded.size,stamp=excluded.stamp,metadata=excluded.metadata", params![path,title,doc.text,modified(&item.path()),created,stat.len(),stamp,json])?;
-        }
+            doc.text
+        };
+        let properties = metadata(&text);
+        let title = if properties.title.is_empty() {
+            item_path
+                .file_stem()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned()
+        } else {
+            properties.title.clone()
+        };
+        let disk_created = stat
+            .created()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_millis() as u64);
+        let json = serde_json::to_string(&properties)
+            .map_err(|_| AppError::new("INDEX", "无法解析文档属性"))?;
+        let created = front_timestamp(&text, "created").unwrap_or(disk_created);
+        let updated = front_timestamp(&text, "updated").unwrap_or_else(|| modified(&item_path));
+        transaction.execute("INSERT INTO notes(path,title,body,modified,created,size,stamp,metadata) VALUES(?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(path) DO UPDATE SET title=excluded.title,body=excluded.body,modified=excluded.modified,created=excluded.created,size=excluded.size,stamp=excluded.stamp,metadata=excluded.metadata", params![path,title,text,updated,created,stat.len(),stamp,json])?;
     }
     for path in cached.keys() {
-        if !seen.contains(path) {
+        if affected(path) && !seen.contains(path) {
             transaction.execute("DELETE FROM notes WHERE path=?1", [path])?;
         }
     }
@@ -176,7 +211,30 @@ pub fn reindex(library: &Library, id: &str) -> Result<usize> {
         ));
     }
     transaction.commit()?;
-    Ok(seen.len())
+    db.query_row("SELECT COUNT(*) FROM notes", [], |r| r.get(0))
+        .map_err(Into::into)
+}
+fn front_timestamp(text: &str, key: &str) -> Option<u64> {
+    let normalized = text.replace("\r\n", "\n");
+    let rest = normalized.strip_prefix("---\n")?;
+    let end = rest.find("\n---").or_else(|| rest.find("\n..."))?;
+    let data: serde_json::Value = serde_yaml::from_str(&rest[..end]).ok()?;
+    let value = data[key].as_str()?;
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|d| d.timestamp_millis().max(0) as u64)
+        .or_else(|| {
+            chrono::NaiveDateTime::parse_from_str(value, "%Y%m%dT%H%M%SZ")
+                .ok()
+                .map(|d| d.and_utc().timestamp_millis().max(0) as u64)
+        })
+        .or_else(|| value.parse::<u64>().ok())
+}
+pub fn purge(library: &Library, id: &str, path: &str) -> Result<()> {
+    let db = connect(library, id)?;
+    db.execute("DELETE FROM notes WHERE path=?1", [path])?;
+    db.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+    Ok(())
 }
 pub fn catalog(library: &Library, id: &str) -> Result<Vec<NoteSummary>> {
     let db = connect(library, id)?;
@@ -226,6 +284,7 @@ fn terms(query: &str) -> Result<Vec<Vec<Term>>> {
     }
     let any = words.iter().any(|w| w == "any:1");
     let mut groups = vec![Vec::new()];
+    let mut negatives = Vec::new();
     for w in words {
         if w == "any:1" || w == "any:0" || w == "AND" {
             continue;
@@ -253,7 +312,18 @@ fn terms(query: &str) -> Result<Vec<Vec<Term>>> {
         if value.is_empty() {
             return Err(AppError::new("QUERY", "搜索字段需要值"));
         }
-        if any && !negative && !groups.last().is_some_and(|g| g.is_empty()) {
+        if negative {
+            negatives.push(Term {
+                field: field.to_owned(),
+                value: value.to_lowercase(),
+                negative,
+            });
+            continue;
+        }
+        if ["created", "updated", "due"].contains(&field) && value != "*" {
+            date_filter(value)?;
+        }
+        if any && !groups.last().is_some_and(|g| g.is_empty()) {
             groups.push(Vec::new());
         }
         if let Some(group) = groups.last_mut() {
@@ -264,7 +334,70 @@ fn terms(query: &str) -> Result<Vec<Vec<Term>>> {
             });
         }
     }
+    groups.retain(|g| !g.is_empty());
+    if groups.is_empty() {
+        groups.push(Vec::new());
+    }
+    groups[0].extend(negatives);
     Ok(groups)
+}
+fn date_filter(value: &str) -> Result<(String, chrono::NaiveDate)> {
+    let (operator, value) = [">=", "<=", ">", "<", "="]
+        .into_iter()
+        .find_map(|op| value.strip_prefix(op).map(|v| (op, v)))
+        .unwrap_or((">=", value));
+    let today = chrono::Local::now().date_naive();
+    let relative = ["day", "week", "month", "year"]
+        .into_iter()
+        .find_map(|unit| value.strip_prefix(unit).map(|n| (unit, n)));
+    let date = if let Some((unit, n)) = relative {
+        let count = if n.is_empty() {
+            0
+        } else {
+            n.parse::<i64>()
+                .map_err(|_| AppError::new("QUERY", "相对日期格式无效"))?
+        };
+        let days = count
+            .checked_mul(match unit {
+                "week" => 7,
+                "month" => 30,
+                "year" => 365,
+                _ => 1,
+            })
+            .ok_or_else(|| AppError::new("QUERY", "日期超出范围"))?;
+        today
+            .checked_add_signed(
+                chrono::Duration::try_days(days)
+                    .ok_or_else(|| AppError::new("QUERY", "日期超出范围"))?,
+            )
+            .ok_or_else(|| AppError::new("QUERY", "日期超出范围"))?
+    } else {
+        chrono::NaiveDate::parse_from_str(
+            value,
+            if value.contains('-') {
+                "%Y-%m-%d"
+            } else {
+                "%Y%m%d"
+            },
+        )
+        .map_err(|_| AppError::new("QUERY", "日期需使用 YYYYMMDD、YYYY-MM-DD 或 day-7"))?
+    };
+    Ok((operator.into(), date))
+}
+fn matches_date(value: Option<chrono::NaiveDate>, query: &str) -> bool {
+    if query == "*" {
+        return value.is_some();
+    }
+    let (Ok((op, target)), Some(date)) = (date_filter(query), value) else {
+        return false;
+    };
+    match op.as_str() {
+        ">" => date > target,
+        "<" => date < target,
+        "<=" => date <= target,
+        "=" => date == target,
+        _ => date >= target,
+    }
 }
 fn contains(text: &str, needle: &str) -> bool {
     let text = text.to_lowercase();
@@ -285,7 +418,7 @@ pub fn search(library: &Library, id: &str, query: &str) -> Result<Vec<SearchHit>
     }
     let groups = terms(query)?;
     let db = connect(library, id)?;
-    let mut stmt = db.prepare("SELECT path,title,body,modified,metadata FROM notes")?;
+    let mut stmt = db.prepare("SELECT path,title,body,modified,metadata,created FROM notes")?;
     let rows = stmt.query_map([], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -293,11 +426,12 @@ pub fn search(library: &Library, id: &str, query: &str) -> Result<Vec<SearchHit>
             r.get::<_, String>(2)?,
             r.get::<_, u64>(3)?,
             r.get::<_, String>(4)?,
+            r.get::<_, u64>(5)?,
         ))
     })?;
     let mut hits: Vec<SearchHit> = Vec::new();
     for row in rows {
-        let (path, title, body, modified, json) = row?;
+        let (path, title, body, modified, json, created) = row?;
         let meta: Metadata = serde_json::from_str(&json).unwrap_or_default();
         let matches = |term: &Term| -> bool {
             match term.field.as_str() {
@@ -309,7 +443,7 @@ pub fn search(library: &Library, id: &str, query: &str) -> Result<Vec<SearchHit>
                     if term.value == "todo" {
                         meta.todo
                     } else {
-                        !meta.todo
+                        term.value == "note" && !meta.todo
                     }
                 }
                 "is" => match term.value.as_str() {
@@ -319,18 +453,20 @@ pub fn search(library: &Library, id: &str, query: &str) -> Result<Vec<SearchHit>
                     _ => false,
                 },
                 "source" => contains(&meta.source, &term.value),
-                "due" => {
-                    if term.value == "*" {
-                        !meta.due.is_empty()
-                    } else {
-                        meta.due.replace('-', "").as_str() >= term.value.replace('-', "").as_str()
-                    }
-                }
+                "due" => matches_date(
+                    chrono::NaiveDate::parse_from_str(meta.due.get(..10).unwrap_or(""), "%Y-%m-%d")
+                        .ok(),
+                    &term.value,
+                ),
                 "created" | "updated" => {
-                    let date = chrono::DateTime::from_timestamp_millis(modified as i64)
-                        .map(|d| d.format("%Y%m%d").to_string())
-                        .unwrap_or_default();
-                    date.as_str() >= term.value.replace('-', "").as_str()
+                    let timestamp = if term.field == "created" {
+                        created
+                    } else {
+                        modified
+                    };
+                    let date = chrono::DateTime::from_timestamp_millis(timestamp as i64)
+                        .map(|d| d.with_timezone(&chrono::Local).date_naive());
+                    matches_date(date, &term.value)
                 }
                 _ => {
                     contains(&path, &term.value)

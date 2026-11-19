@@ -4,15 +4,17 @@ window.addEventListener("message", function initialize(event) {
   window.removeEventListener("message",initialize);
   const port=event.ports[0];
   const bootstrap=`
-    const calls=new Map(),callbacks=new Map();let sequence=0;
-    function call(method,...args){const requestId=++sequence;postMessage({type:'call',method,args,requestId});return new Promise((resolve,reject)=>calls.set(requestId,{resolve,reject}));}
+    const calls=new Map(),callbacks=new Map();let sequence=0,instance,cleanup;const disposers=[];let documentState={},dataState;
+    function call(method,...args){if(calls.size>=128)return Promise.reject(new Error('Too many pending plugin calls'));const requestId=++sequence;postMessage({type:'call',method,args,requestId});return new Promise((resolve,reject)=>calls.set(requestId,{resolve,reject}));}
     function register(method,args,callback){const callbackId=++sequence;if(callback)callbacks.set(callbackId,callback);const pending=call(method,...args,callbackId);pending.catch(error=>postMessage({type:'error',message:String(error.message)}));return ()=>{callbacks.delete(callbackId);void pending.then(id=>call('dispose',id));};}
     onmessage=async event=>{
       const message=event.data;
+      if(message.type==='stop'){try{for(const dispose of [cleanup,()=>instance?.onunload?.(),...disposers.reverse()]){try{await dispose?.();}catch{}}}finally{calls.clear();callbacks.clear();documentState={};dataState=undefined;postMessage({type:'stopped'});close();}return;}
+      if(message.type==='document'){documentState=message.document;return;}
       if(message.type==='result'){const pending=calls.get(message.requestId);if(pending){calls.delete(message.requestId);message.error?pending.reject(new Error(message.error)):pending.resolve(message.value);}return;}
       if(message.type==='callback'){try{const value=await callbacks.get(message.callbackId)?.(...(message.args??[]));postMessage({type:'callbackResult',requestId:message.requestId,value});}catch(error){postMessage({type:'callbackResult',requestId:message.requestId,error:String(error.message)});}return;}
       if(message.type!=='init')return;
-      const disposers=[];
+      documentState=message.document;dataState=message.data;
       const context={workspace:message.workspace,manifest:message.manifest,
         addCommand:command=>register('addCommand',[{id:command.id,name:command.name,shortcut:command.shortcut}],command.run),
         addSettings:fields=>register('addSettings',[fields]),
@@ -24,22 +26,22 @@ window.addEventListener("message", function initialize(event) {
         registerHtmlPanel:(id,title,html)=>register('registerHtmlPanel',[id,title,html]),
         registerListColumn:(key,title,render)=>register('registerListColumn',[key,title],render),
         showDialog:(title,fields)=>call('showDialog',title,fields),
-        loadData:defaults=>typeof defaults==='object'&&defaults!==null?{...defaults,...message.data}:message.data??defaults,
-        saveData:data=>call('saveData',data),notice:text=>call('notice',text),
+        loadData:defaults=>typeof defaults==='object'&&defaults!==null?{...defaults,...dataState}:dataState??defaults,
+        saveData:async data=>{await call('saveData',data);dataState=data;},notice:text=>call('notice',text),
         files:{read:path=>call('files.read',path),write:(path,text)=>call('files.write',path,text),list:path=>call('files.list',path)},
-        editor:{getText:()=>message.document?.text??'',getSelection:()=>message.document?.selection??'',insert:text=>call('editor.insert',text),replaceSelection:text=>call('editor.replaceSelection',text)},
+        editor:{getText:()=>documentState?.text??'',getSelection:()=>documentState?.selection??'',insert:text=>call('editor.insert',text),replaceSelection:text=>call('editor.replaceSelection',text)},
         registerPanel:()=>{throw new Error('隔离插件请使用 registerHtmlPanel，或明确选择可信运行模式');},
         registerCodeBlock:()=>{throw new Error('DOM 渲染扩展需要可信运行模式');},
         registerEditorExtension:()=>{throw new Error('CodeMirror 扩展需要可信运行模式');}
       };
-      try{const blob=new Blob([message.source],{type:'text/javascript'});const url=URL.createObjectURL(blob);const module=await import(url);URL.revokeObjectURL(url);const instance=new module.default();const result=await instance.onload(context);postMessage({type:'ready'});}
+      try{const blob=new Blob([message.source],{type:'text/javascript'});const url=URL.createObjectURL(blob);const module=await import(url);URL.revokeObjectURL(url);instance=new module.default();cleanup=await instance.onload(context);postMessage({type:'ready'});}
       catch(error){postMessage({type:'error',message:String(error.message)});}
     };
   `;
   const url=URL.createObjectURL(new Blob([bootstrap],{type:"text/javascript"}));
-  const worker=new Worker(url,{type:"module"});URL.revokeObjectURL(url);
-  worker.onmessage=event=>port.postMessage(event.data);
-  worker.onerror=event=>port.postMessage({type:"error",message:event.message});
+  const worker=new Worker(url);
+  worker.onmessage=event=>{if(event.data?.type==='ready'||event.data?.type==='error'||event.data?.type==='stopped')URL.revokeObjectURL(url);port.postMessage(event.data);};
+  worker.onerror=event=>port.postMessage({type:"error",message:event.message||`Plugin worker failed: ${event.filename||'sandbox worker'}:${event.lineno||0}`});
   port.onmessage=event=>worker.postMessage(event.data);
-  port.start();worker.postMessage({type:"init",...event.data});
+  port.start();worker.postMessage({...event.data,type:"init"});
 });

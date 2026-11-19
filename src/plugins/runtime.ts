@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import DOMPurify from "dompurify";
 import { loadIsolatedPlugin } from "./isolated";
 import { create } from "zustand";
@@ -77,19 +78,19 @@ export const builtinPlugins: PluginDefinition[] = [
   {
     manifest: {
       id: "daily-note",
-      name: "每日笔记",
+      name: t("每日笔记"),
       version: "1.0.0",
       sdkVersion: 1,
-      description: "在当前目录创建或打开今天的笔记。",
+      description: t("在当前目录创建或打开今天的笔记。"),
       permissions: ["files:write", "commands"],
     },
     async load(context) {
       context.addSettings([
-        { key: "prefix", label: "文件名前缀", type: "text", defaultValue: "" },
+        { key: "prefix", label: t("文件名前缀"), type: "text", defaultValue: "" },
       ]);
       context.addCommand({
         id: "open-today",
-        name: "每日笔记：打开今天",
+        name: t("每日笔记：打开今天"),
         async run() {
           const now = new Date();
           const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -118,16 +119,16 @@ export const builtinPlugins: PluginDefinition[] = [
   {
     manifest: {
       id: "markdown-tools",
-      name: "Markdown 工具",
+      name: t("Markdown 工具"),
       version: "1.0.0",
       sdkVersion: 1,
-      description: "插入日期、目录和常用 Markdown 内容。",
+      description: t("插入日期、目录和常用 Markdown 内容。"),
       permissions: ["editor", "commands"],
     },
     load(context) {
       context.addCommand({
         id: "insert-date",
-        name: "Markdown：插入日期时间",
+        name: t("Markdown：插入日期时间"),
         run() {
           context.editor.insert(
             new Date().toLocaleString("zh-CN", { hour12: false }),
@@ -136,7 +137,7 @@ export const builtinPlugins: PluginDefinition[] = [
       });
       context.addCommand({
         id: "insert-toc",
-        name: "Markdown：插入文档目录",
+        name: t("Markdown：插入文档目录"),
         run() {
           const toc = createTOC(context.editor.getText());
           context.editor.insert(toc + "\n");
@@ -144,10 +145,10 @@ export const builtinPlugins: PluginDefinition[] = [
       });
       context.addCommand({
         id: "insert-table",
-        name: "Markdown：插入表格",
+        name: t("Markdown：插入表格"),
         run() {
           context.editor.insert(
-            "| 标题 | 内容 |\n| --- | --- |\n| 示例 | 文本 |\n",
+            t("| 标题 | 内容 |\n| --- | --- |\n| 示例 | 文本 |\n"),
           );
         },
       });
@@ -156,21 +157,21 @@ export const builtinPlugins: PluginDefinition[] = [
   {
     manifest: {
       id: "word-statistics",
-      name: "文档统计",
+      name: t("文档统计"),
       version: "1.0.0",
       sdkVersion: 1,
-      description: "在独立面板查看当前文档字数、字符与行数。",
+      description: t("在独立面板查看当前文档字数、字符与行数。"),
       permissions: ["editor", "views"],
     },
     load(context) {
-      context.registerPanel("statistics", "文档统计", (element) => {
+      context.registerPanel("statistics", t("文档统计"), (element) => {
         const update = () => {
           const text = context.editor.getText();
           const chinese = (text.match(/[\u3400-\u9fff]/g) ?? []).length;
           const words = (
             text.replace(/[\u3400-\u9fff]/g, " ").match(/[A-Za-z0-9]+/g) ?? []
           ).length;
-          element.textContent = `字数 ${chinese + words}\n字符 ${text.length}\n行数 ${text.split("\n").length}`;
+          element.textContent = t("字数 {0}\n字符 {1}\n行数 {2}", chinese + words, text.length, text.split("\n").length);
         };
         update();
         const timer = window.setInterval(update, 700);
@@ -187,6 +188,10 @@ function contextFor(
   alive: () => boolean,
 ): PluginContext {
   const id = `${workspace}:${definition.manifest.id}`;
+  const readVersions = new Map<string, string>();
+  const lifecycleAlive=alive;alive=()=>{const state=useApp.getState();return lifecycleAlive()&&!state.settings.safeMode&&Boolean(state.sessions[workspace])&&(state.settings.plugins[workspace]?.[definition.manifest.id]?.enabled??builtinPlugins.includes(definition));};
+  const privileged=builtinPlugins.includes(definition)||definition.manifest.runtime==="trusted";
+  const allowed=(permission:string)=>privileged||useApp.getState().settings.plugins[workspace]?.[definition.manifest.id]?.permissions?.includes(permission);
   const register = (item: Dispose) => {
     if (alive()) dispose.push(item);
     else item();
@@ -271,7 +276,7 @@ function contextFor(
     addMenuItem(itemId,title,command) { const item={workspace,plugin:definition.manifest.id,id:itemId,title,command:command.startsWith(id+":")?command:id+":"+command};useRegistry.setState(s=>({menuItems:[...s.menuItems,item]}));return register(()=>useRegistry.setState(s=>({menuItems:s.menuItems.filter(i=>i!==item)}))); },
     addToolbarItem(itemId,title,command) { const item={workspace,plugin:definition.manifest.id,id:itemId,title,command:command.startsWith(id+":")?command:id+":"+command};useRegistry.setState(s=>({toolbarItems:[...s.toolbarItems,item]}));return register(()=>useRegistry.setState(s=>({toolbarItems:s.toolbarItems.filter(i=>i!==item)}))); },
     registerHtmlPanel(panelId,title,html) { return this.registerPanel(panelId,title,element=>{element.innerHTML=DOMPurify.sanitize(html);}); },
-    registerListColumn(key,title,render) {const column={workspace,plugin:definition.manifest.id,key,title,render};useRegistry.setState(s=>({columns:[...s.columns,column]}));return register(()=>useRegistry.setState(s=>({columns:s.columns.filter(c=>c!==column)})));},
+    registerListColumn(key,title,render) {if(!allowed("files:read"))throw new Error("Permission required: files:read");const column={workspace,plugin:definition.manifest.id,key,title,render:(note:import("../types").NoteSummary)=>allowed("files:read")?render(note):""};useRegistry.setState(s=>({columns:[...s.columns,column]}));return register(()=>useRegistry.setState(s=>({columns:s.columns.filter(c=>c!==column)})));},
     showDialog(title,fields) {return new Promise(resolve=>{const dialog={id:crypto.randomUUID(),title,fields,resolve:(value:Record<string,unknown>|null)=>{useRegistry.setState(s=>({dialogs:s.dialogs.filter(d=>d!==dialog)}));resolve(value);}};useRegistry.setState(s=>({dialogs:[...s.dialogs,dialog]}));register(()=>dialog.resolve(null));});},
     onFileChange(callback) {
       if (!alive()) return () => {};
@@ -297,13 +302,13 @@ function contextFor(
         : ((data ?? defaults) as T);
     },
     async saveData(data) {
-      if (!alive()) throw new Error("插件已停止");
+      if (!alive()) throw new Error(t("插件已停止"));
       const state = useApp.getState();
       const plugins = {
         ...state.settings.plugins,
         [workspace]: {
           ...state.settings.plugins[workspace],
-          [definition.manifest.id]: { ...state.settings.plugins[workspace]?.[definition.manifest.id], enabled: true, data },
+          [definition.manifest.id]: { ...state.settings.plugins[workspace]?.[definition.manifest.id], enabled: state.settings.plugins[workspace]?.[definition.manifest.id]?.enabled??builtinPlugins.includes(definition), data },
         },
       };
       state.updateSettings({ plugins });
@@ -313,20 +318,20 @@ function contextFor(
     },
     files: {
       async read(path) {
-        if (!alive()) throw new Error("插件已停止");
+        if (!alive()) throw new Error(t("插件已停止"));
         const isolated=!builtinPlugins.includes(definition)&&definition.manifest.runtime!=="trusted";
-        if(isolated) { const doc=await api.pluginFileRequest(workspace,definition.manifest.id,"read",path); return (doc as import("../types").Document).text; }
+        if(isolated) { const doc=await api.pluginFileRequest(workspace,definition.manifest.id,"read",path) as import("../types").Document;readVersions.set(path,doc.version);return doc.text; }
         const cached = useApp.getState().sessions[workspace]?.documents[path];
         return cached
           ? cached.text
           : (await api.readDocument(workspace, path)).text;
       },
       async write(path, text) {
-        if (!alive()) throw new Error("插件已停止");
+        if (!alive()) throw new Error(t("插件已停止"));
         const state = useApp.getState();
         const isolated=!builtinPlugins.includes(definition)&&definition.manifest.runtime!=="trusted";
-        if(isolated){if(state.sessions[workspace]?.documents[path]?.dirty)throw new Error("文档存在未保存内容");await api.pluginFileRequest(workspace,definition.manifest.id,"write",path,text);await state.refresh(workspace);void state.reindex(workspace);return;}
-        if (!state.sessions[workspace]) throw new Error("工作区已关闭");
+        if(isolated){if(state.sessions[workspace]?.documents[path]?.dirty)throw new Error(t("文档存在未保存内容"));const updated=await api.pluginFileRequest(workspace,definition.manifest.id,"write",path,text,readVersions.get(path)) as import("../types").Document;readVersions.set(path,updated.version);await state.refresh(workspace);void state.reindex(workspace);return;}
+        if (!state.sessions[workspace]) throw new Error(t("工作区已关闭"));
         try {
           await api.readDocument(workspace, path);
         } catch (error) {
@@ -341,10 +346,10 @@ function contextFor(
         }
         const existing = useApp.getState().sessions[workspace]?.documents[path];
         if (!alive() || !useApp.getState().sessions[workspace])
-          throw new Error("工作区已关闭");
+          throw new Error(t("工作区已关闭"));
         if (existing) {
           if (existing.dirty || existing.error)
-            throw new Error("文档存在未保存内容，请先处理后再运行插件");
+            throw new Error(t("文档存在未保存内容，请先处理后再运行插件"));
           state.edit(workspace, path, text.replace(/\r\n/g, "\n"));
           await state.save(workspace, path);
         } else {
@@ -361,7 +366,7 @@ function contextFor(
         void state.reindex(workspace);
       },
       async list(directory) {
-        if (!alive()) throw new Error("插件已停止");
+        if (!alive()) throw new Error(t("插件已停止"));
         if(!builtinPlugins.includes(definition)&&definition.manifest.runtime!=="trusted")return await api.pluginFileRequest(workspace,definition.manifest.id,"list",directory) as {name:string;path:string;isDirectory:boolean}[];
         return api.listDirectory(
           workspace,
@@ -373,18 +378,24 @@ function contextFor(
     editor: {
       codeMirror,
       getText() {
+        if(!allowed("editor"))return "";
         const session = useApp.getState().sessions[workspace];
         return session?.documents[session.file]?.text ?? "";
       },
       getSelection() {
+        if(!allowed("editor"))return "";
         return editorActions.select(workspace);
       },
       insert(text) {
         if (!alive()) return;
+        if(!allowed("editor"))throw new Error("Permission required: editor");
+        if(typeof text!=="string"||text.length>16*1024*1024)throw new Error("Invalid editor input");
         editorActions.insert(workspace, text);
       },
       replaceSelection(text) {
         if (!alive()) return;
+        if(!allowed("editor"))throw new Error("Permission required: editor");
+        if(typeof text!=="string"||text.length>16*1024*1024)throw new Error("Invalid editor input");
         editorActions.insert(workspace, text, "", "", true);
       },
     },
@@ -392,7 +403,10 @@ function contextFor(
 }
 
 const external = new Map<string, PluginDefinition>();
+const imported = new Map<string,PluginBundle>();
 export async function importPlugin(bundle: PluginBundle): Promise<void> {
+  const previous=imported.get(bundle.manifest.id);if(previous&&previous.source===bundle.source&&previous.styles===bundle.styles&&JSON.stringify(previous.manifest)===JSON.stringify(bundle.manifest))return;
+  imported.set(bundle.manifest.id,bundle);
   for (const [id, cleanup] of running)
     if (id.endsWith(":" + bundle.manifest.id)) {
       cleanup();
@@ -426,6 +440,7 @@ export function removePlugin(id:string):void {
   for(const [key,cleanup] of running)if(key.endsWith(":"+id)){cleanup();running.delete(key);}
   for(const key of pending.keys())if(key.endsWith(":"+id))cancelPending(key);
   external.delete(id);
+  imported.delete(id);
 }
 
 export function definitions(): PluginDefinition[] {
@@ -440,6 +455,7 @@ export function synchronizePlugins(): void {
         state.settings.plugins[workspace]?.[definition.manifest.id]?.enabled ??
         builtinPlugins.includes(definition);
       if (!enabled || state.settings.safeMode || !state.sessions[workspace]?.info.available) continue;
+      if(definition.manifest.runtime==="trusted"&&!builtinPlugins.includes(definition)&&!state.settings.plugins[workspace]?.[definition.manifest.id]?.permissions?.includes("host:full"))continue;
       const id = `${workspace}:${definition.manifest.id}`;
       desired.add(id);
       if (

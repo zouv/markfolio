@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
 import DOMPurify from "dompurify";
@@ -13,11 +14,11 @@ export function htmlToMarkdown(html: string): string {
   return service.turndown(DOMPurify.sanitize(html, { ADD_ATTR: ["data-local-src", "data-math-source"] }));
 }
 export async function fileAsBase64(file: Blob): Promise<string> {
-  if (file.size > 32 * 1024 * 1024) throw new Error("粘贴附件超过 32 MB");
+  if (file.size > 32 * 1024 * 1024) throw new Error(t("粘贴附件超过 32 MB"));
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result).split(",")[1]);
-    reader.onerror = () => reject(new Error("无法读取剪贴板图片"));
+    reader.onerror = () => reject(new Error(t("无法读取剪贴板图片")));
     reader.readAsDataURL(file);
   });
 }

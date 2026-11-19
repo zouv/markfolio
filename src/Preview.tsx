@@ -1,11 +1,13 @@
+import { t } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createRenderer, prepareMarkdown, toggleTask } from "./markdown";
 import DOMPurify from "dompurify";
-import { readAsset, openLocalFile, openExternalLink } from "./api";
+import { readAsset, openLocalFile, openExternalLink, loadRemoteImage } from "./api";
 import { resolveLink, displayError } from "./types";
 import { useApp } from "./store";
 import "katex/dist/katex.min.css";
 import "highlight.js/styles/github.css";
+import "./fountain.css";
 import { processPluginBlocks } from "./plugins/runtime";
 
 export default function Preview({
@@ -24,6 +26,8 @@ export default function Preview({
   const container = useRef<HTMLDivElement>(null);
   const [external, setExternal] = useState<URL>();
   const [linkError, setLinkError] = useState("");
+  const [remoteAllowed,setRemoteAllowed] = useState(false);
+  useEffect(()=>setRemoteAllowed(false),[workspace,path]);
   const settings = useApp(state => state.settings);
   async function allowLink() {
     if (!external) return;
@@ -42,8 +46,8 @@ export default function Preview({
     }
   }
   const renderer = useMemo(() => {
-    return createRenderer(math, { rawHtml: settings.rawHtml });
-  }, [math, settings.rawHtml]);
+    return createRenderer(math, { rawHtml: settings.rawHtml,extensions:settings.markdownExtensions });
+  }, [math, settings.rawHtml,settings.markdownExtensions]);
   const html = useMemo(() => {
     const content = prepareMarkdown(text);
     const sanitized = DOMPurify.sanitize(renderer.render(content), { FORBID_TAGS: ["style", "iframe", "object", "embed", "form"], ADD_URI_SAFE_ATTR: ["data-local-src"], ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|markfolio-wiki):|[^a-z]|[a-z+.-]+(?:[^a-z+.-:]|$))/i });
@@ -60,19 +64,21 @@ export default function Preview({
       const original = image.getAttribute("data-local-src") ?? "";
       const resolved = resolveLink(path, original);
       if (original.startsWith("markfolio-wiki:")) {
-        void import("./api").then(api => api.resolveNoteLink(workspace,path,decodeURIComponent(original.slice(15)),true)).then(link => readAsset(workspace,link.path)).then(url => { if(!cancelled)image.src=url; }).catch(()=>{image.alt="附件不存在";});
+        void import("./api").then(api => api.resolveNoteLink(workspace,path,decodeURIComponent(original.slice(15)),true)).then(link => readAsset(workspace,link.path)).then(url => { if(!cancelled)image.src=url; }).catch(()=>{image.alt=t("附件不存在");});
       } else if (resolved)
         void readAsset(workspace, resolved)
           .then((url) => {
             if (!cancelled) image.src = url;
           })
           .catch(() => {
-            image.alt = `无法预览：${original}`;
+            image.alt = t("无法预览：{0}", original);
           });
-      else
+      else if(remoteAllowed && original.startsWith("https://")) {
+        void loadRemoteImage(original).then(url=>{if(!cancelled)image.src=url;}).catch(e=>{if(!cancelled)image.alt=displayError(e);});
+      } else
         image.alt = /^https?:/.test(original)
-          ? "远程图片未加载"
-          : "无法解析图片路径";
+          ? t("远程图片未加载")
+          : t("无法解析图片路径");
     }
     if (diagrams)
       for (const code of element.querySelectorAll<HTMLElement>(
@@ -83,6 +89,7 @@ export default function Preview({
             mermaid.initialize({
               startOnLoad: false,
               securityLevel: "strict",
+              htmlLabels: false,
               theme:
                 useApp.getState().settings.theme === "dark"
                   ? "dark"
@@ -98,26 +105,28 @@ export default function Preview({
               });
           })
           .catch(() => {
-            if (!cancelled) code.dataset.error = "图表语法无效";
+            if (!cancelled) code.dataset.error = t("图表语法无效");
           });
       }
     void processPluginBlocks(workspace, element, path).then((items) => {
       if (cancelled) items.forEach((dispose) => dispose());
       else dispose.push(...items);
     });
-    for(const code of element.querySelectorAll<HTMLElement>("code.language-abc")) void import("abcjs").then(abc=>{if(cancelled||!code.parentElement)return;abc.renderAbc(code.parentElement,code.textContent??"");}).catch(()=>{code.dataset.error="乐谱语法无效";});
-    for(const code of element.querySelectorAll<HTMLElement>("code.language-fountain")) { if(code.parentElement){const output=document.createElement("div");output.className="fountain-script";for(const line of (code.textContent??"").split("\n")){const p=document.createElement("p");p.textContent=line;p.className=/^(INT\.|EXT\.|INT\/EXT\.)/.test(line)?"scene":/^[A-Z][A-Z\s()]+$/.test(line.trim())?"character":line.trim().startsWith("(")?"parenthetical":"dialogue";output.append(p);}code.parentElement.replaceChildren(output);} }
+    for(const code of settings.markdownExtensions.abc?element.querySelectorAll<HTMLElement>("code.language-abc"):[]) void import("abcjs").then(({default:abc})=>{if(cancelled||!code.parentElement)return;abc.renderAbc(code.parentElement,code.textContent??"");}).catch(()=>{code.dataset.error=t("乐谱语法无效");});
+    for(const code of settings.markdownExtensions.fountain?element.querySelectorAll<HTMLElement>("code.language-fountain"):[]) void import("./fountain").then(({renderFountain})=>{if(!cancelled&&code.parentElement)code.parentElement.innerHTML=DOMPurify.sanitize(renderFountain(code.textContent??""));}).catch(()=>{if(!cancelled)code.dataset.error=t("剧本语法无效");});
     return () => {
       cancelled = true;
       dispose.forEach((dispose) => dispose());
     };
-  }, [html, workspace, path, diagrams]);
+  }, [html, workspace, path, diagrams,remoteAllowed,settings.markdownExtensions]);
   const fragment=useApp(state=>state.sessions[workspace]?.fragment);
   useEffect(()=>{if(!fragment)return;requestAnimationFrame(()=>{const target=container.current?.querySelector(`[id="${CSS.escape(fragment)}"]`);target?.scrollIntoView({block:"start"});});},[fragment,html]);
   return (
     <>
+      {settings.remoteImages&&!remoteAllowed&&/data-local-src="https:/.test(html)&&<button className="secondary remote-images-button" onClick={()=>{if(window.confirm(t("远程图片会联系图片所在网站。本次允许加载？")))setRemoteAllowed(true);}}>{t("加载远程图片")}</button>}
       <div
         className="markdown-preview"
+        tabIndex={0}
         style={{ fontSize: settings.previewFontSize, fontFamily: settings.previewFontFamily, maxWidth: settings.previewWidth || undefined }}
         ref={container}
         onClick={(event) => {
@@ -167,13 +176,13 @@ export default function Preview({
             ).catch((error) =>
               useApp
                 .getState()
-                .setNotice(String(error?.message ?? "链接文件不存在")),
+                .setNotice(String(error?.message ?? t("链接文件不存在"))),
             );
           else {
             try {
               const url = new URL(href);
               if (url.protocol !== "https:" || url.username || url.password)
-                throw new Error("外部链接需要使用 HTTPS");
+                throw new Error(t("外部链接需要使用 HTTPS"));
               if (
                 useApp
                   .getState()
@@ -199,13 +208,12 @@ export default function Preview({
             className="modal"
             role="dialog"
             aria-modal="true"
-            aria-label="打开外部链接"
+            aria-label={t("打开外部链接")}
           >
-            <h2>打开外部链接</h2>
+            <h2>{t("打开外部链接")}</h2>
             <p>
-              在默认浏览器打开 <strong>{external.hostname}</strong>
-              ？允许后，今后将直接打开这个网站的链接。
-            </p>
+              {t("在默认浏览器打开")}<strong>{external.hostname}</strong>
+              {t("？允许后，今后将直接打开这个网站的链接。")}</p>
             <p className="muted" style={{ overflowWrap: "anywhere" }}>
               {external.href}
             </p>
@@ -215,11 +223,9 @@ export default function Preview({
                 className="secondary"
                 onClick={() => setExternal(undefined)}
               >
-                取消
-              </button>
+                {t("取消")}</button>
               <button className="primary" onClick={() => void allowLink()}>
-                允许并打开
-              </button>
+                {t("允许并打开")}</button>
             </div>
           </section>
         </div>

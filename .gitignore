@@ -29,3 +29,9 @@ dist/
 # ===== Rust / Tauri =====
 src-tauri/target/
 src-tauri/gen/schemas/
+
+# Recreated from locked OCR dependencies before development/build
+public/ocr/
+public/pdf/
+public/export-fonts/
+public/third-party/

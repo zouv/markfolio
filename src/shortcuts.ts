@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { coreCommands } from "./commands";
 
 export type ShortcutCommand = { id: string; name: string; shortcut?: string };
@@ -24,7 +25,7 @@ export function normalizeShortcut(value: string): string {
     modifiers.size !== parts.length ||
     parts.some((part) => !/^(ctrl|alt|shift)$/i.test(part))
   )
-    throw new Error("快捷键修饰键应为 Ctrl、Alt 或 Shift");
+    throw new Error(t("快捷键修饰键应为 Ctrl、Alt 或 Shift"));
   const names: Record<string, string> = {
     arrowleft: "Left",
     arrowright: "Right",
@@ -53,14 +54,14 @@ export function normalizeShortcut(value: string): string {
       normalized,
     )
   )
-    throw new Error("不支持此快捷键，请使用字母、数字、功能键或方向键");
+    throw new Error(t("不支持此快捷键，请使用字母、数字、功能键或方向键"));
   if (
     !modifiers.has("ctrl") &&
     !modifiers.has("alt") &&
     !/^F\d+$/.test(normalized) &&
     normalized !== "Delete"
   )
-    throw new Error("请使用 Ctrl 或 Alt 组合键，避免影响输入文字");
+    throw new Error(t("请使用 Ctrl 或 Alt 组合键，避免影响输入文字"));
   return [
     ...["ctrl", "alt", "shift"]
       .filter((part) => modifiers.has(part))
@@ -139,9 +140,9 @@ export function validateShortcuts(
       return `${command.name}：${(error as Error).message}`;
     }
     if (reserved.has(shortcut))
-      return `${shortcut} 已用于系统操作或工作目录切换`;
+      return t("{0} 已用于系统操作或工作目录切换", shortcut);
     const other = used.get(shortcut);
-    if (other) return `${shortcut} 同时分配给“${other}”和“${command.name}”`;
+    if (other) return t("{0} 同时分配给“{1}”和“{2}”", shortcut, other, command.name);
     used.set(shortcut, command.name);
   }
   return "";

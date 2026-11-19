@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 test.beforeEach(async ({ page }) => {
+  page.on("pageerror", error=>console.error("UI runtime:",error.message));
   await page.goto("/tests/ui/fixture.html");
 });
 test("Ctrl 多选、Shift 范围选择和工作目录切换保留各自状态", async ({

@@ -17,6 +17,12 @@ export type SettingField = {
   description?: string;
   defaultValue?: string | number | boolean;
 };
+export function validateFields(fields: SettingField[]): SettingField[] {
+  if(!Array.isArray(fields)||fields.length>80)throw new Error("Invalid plugin fields");
+  const keys=new Set<string>();
+  for(const field of fields){if(!field||typeof field.key!=="string"||!/^[a-zA-Z][a-zA-Z0-9_-]{0,79}$/.test(field.key)||["__proto__","constructor","prototype"].includes(field.key)||keys.has(field.key)||typeof field.label!=="string"||field.label.length>300||!["text","number","toggle"].includes(field.type)||field.defaultValue!==undefined&&!["string","number","boolean"].includes(typeof field.defaultValue))throw new Error("Invalid plugin field");keys.add(field.key);}
+  return fields;
+}
 export type PluginContext = {
   readonly workspace: { id: string; name: string };
   readonly manifest: PluginManifest;

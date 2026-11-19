@@ -1,7 +1,7 @@
 [package]
 name = "markfolio"
-version = "0.1.1"  # 版本号唯一出处；tauri.conf.json 省略 version 会回退到这里
-description = "Markfolio"
+version = "0.2.0"  # 版本号唯一出处；tauri.conf.json 省略 version 会回退到这里
+description = "MarkFolio local Markdown workspace manager"
 edition = "2021"
 publish = false
 
@@ -36,12 +36,15 @@ regex = "1"
 tar = "0.4"
 zip = { version = "4", default-features = false, features = ["deflate"] }
 quick-xml = "0.38"
-html2md = "0.2"
+htmd = "0.6"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 onenote_parser = "2.1"
+one2html = { version = "2.0", default-features = false, features = ["native-fs", "onepkg", "bin"] }
+typed-path = "0.12"
+keyring = { version = "3", features = ["windows-native"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 aes-gcm = "0.10"
 argon2 = "0.5"

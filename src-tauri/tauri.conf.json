@@ -23,12 +23,21 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' blob:; font-src 'self' data:; object-src 'none'; media-src 'self' data: blob:; worker-src 'self' blob:",
-      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' blob: 'unsafe-inline'; font-src 'self' data:; object-src 'none'; media-src 'self' data: blob:; worker-src 'self' blob:"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' blob: 'wasm-unsafe-eval'; font-src 'self' data:; object-src 'none'; media-src 'self' data: blob:; worker-src 'self' blob:",
+      "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost ws://localhost:* http://localhost:*; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' blob: 'wasm-unsafe-eval' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; media-src 'self' data: blob:; worker-src 'self' blob:"
     }
   },
   "bundle": {
     "active": true,
+    "resources": {
+      "../README.md": "README.md",
+      "../CHANGELOG.md": "CHANGELOG.md",
+      "../ROADMAP.md": "ROADMAP.md",
+      "../public/third-party/": "third-party/",
+      "../docs/": "docs/",
+      "../browser-extension/": "browser-extension/",
+      "../examples/plugins/": "examples/plugins/"
+    },
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -38,8 +47,19 @@
       "icons/icon.ico"
     ],
     "windows": {
+      "wix": { "language": "zh-CN" },
+      "nsis": { "languages": ["SimpChinese", "English"], "displayLanguageSelector": true },
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "markfolio"
+        ]
       }
     }
   }

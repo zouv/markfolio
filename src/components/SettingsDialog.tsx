@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useState } from "react";
 import { Search, X } from "lucide-react";
 import { useApp } from "../store";
@@ -9,13 +10,15 @@ import { useRegistry } from "../plugins/runtime";
 import SettingsContent from "./SettingsContent";
 
 const tabs = [
-  ["general", "常规"],
-  ["appearance", "外观"],
-  ["editor", "编辑器"],
+  ["general", t("常规")],
+  ["appearance", t("外观")],
+  ["editor", t("编辑器")],
   ["markdown", "Markdown"],
-  ["keymap", "键盘快捷键"],
-  ["plugins", "插件"],
-  ["about", "关于"],
+  ["keymap", t("键盘快捷键")],
+  ["plugins", t("插件")],
+  ["desktop", t("桌面")],
+  ["advanced", t("高级")],
+  ["about", t("关于")],
 ];
 export default function SettingsDialog({
   initialTab,
@@ -44,10 +47,11 @@ export default function SettingsDialog({
     Object.keys(settingsDraftPatch(state.settings, base, draft)).length > 0;
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const results = settingsCatalog.filter((item) =>
-    tokens.every((token) => item.join(" ").toLowerCase().includes(token)),
+    tokens.every((token) => item.map(part=>t(part)).join(" ").toLowerCase().includes(token)),
   );
   async function apply(leave: boolean) {
     if (busy) return;
+    if (![ [draft.zoom,50,200], [draft.indexMaxMb,64,4096], [draft.bufferLimit,4,128], [draft.previewFontSize,10,48], [draft.previewWidth,0,3000] ].every(([value,min,max]) => Number.isFinite(value) && value >= min && value <= max)) {setError(t("字号、缩放、预览宽度或缓存上限超出允许范围"));return;}
     if (keymapError) {
       setError(keymapError);
       return;
@@ -70,7 +74,7 @@ export default function SettingsDialog({
       className="modal settings-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="设置"
+      aria-label={t("设置")}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
@@ -80,19 +84,19 @@ export default function SettingsDialog({
     >
       <button
         className="modal-close"
-        aria-label="取消设置"
+        aria-label={t("取消设置")}
         disabled={busy}
         onClick={close}
       >
         <X size={18} />
       </button>
       <aside className="settings-sidebar">
-        <h2>设置</h2>
+        <h2>{t("设置")}</h2>
         <label className="settings-search">
           <Search size={14} />
           <input
-            aria-label="搜索设置"
-            placeholder="搜索设置…"
+            aria-label={t("搜索设置")}
+            placeholder={t("搜索设置…")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -110,7 +114,7 @@ export default function SettingsDialog({
                 setQuery("");
               }}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
       </aside>
@@ -118,7 +122,7 @@ export default function SettingsDialog({
         <div className="settings-content">
           {tokens.length ? (
             <>
-              <h2>搜索结果</h2>
+              <h2>{t("搜索结果")}</h2>
               {results.length ? (
                 results.map(([section, key, label, description]) => (
                   <button
@@ -134,12 +138,12 @@ export default function SettingsDialog({
                       );
                     }}
                   >
-                    <strong>{label}</strong>
-                    <span>{description}</span>
+                    <strong>{t(label)}</strong>
+                    <span>{t(description)}</span>
                   </button>
                 ))
               ) : (
-                <p>没有匹配的设置</p>
+                <p>{t("没有匹配的设置")}</p>
               )}
             </>
           ) : (
@@ -150,7 +154,7 @@ export default function SettingsDialog({
         </div>
         <div className="settings-bottom">
           <div>
-            <span>{dirty ? "有未应用的修改" : "设置已保存"}</span>
+            <span>{dirty ? t("有未应用的修改") : t("设置已保存")}</span>
             {(error || keymapError) && (
               <p className="form-error" role="alert">
                 {error || keymapError}
@@ -159,21 +163,19 @@ export default function SettingsDialog({
           </div>
           <div className="settings-actions">
             <button className="secondary" disabled={busy} onClick={close}>
-              取消
-            </button>
+              {t("取消")}</button>
             <button
               className="secondary"
               disabled={busy || !dirty || !!keymapError}
               onClick={() => void apply(false)}
             >
-              应用
-            </button>
+              {t("应用")}</button>
             <button
               className="primary"
               disabled={busy || !!keymapError}
               onClick={() => void apply(true)}
             >
-              {busy ? "保存中…" : "确定"}
+              {busy ? t("保存中…") : t("确定")}
             </button>
           </div>
         </div>

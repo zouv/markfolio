@@ -1,0 +1,13 @@
+.fountain-script {font:16px/1.5 'Courier New',monospace;white-space:normal;padding:1em;}
+.fountain-script .title-page:empty {display:none;}
+.fountain-script .title-page {text-align:center;margin-bottom:4em;}
+.fountain-script h2 {font-size:1em;text-align:right;margin:2em 0 1em;}
+.fountain-script h3 {font-size:1em;font-weight:bold;margin-top:2em;}
+.fountain-script h4 {font-size:1em;font-weight:normal;text-align:center;margin:1em 0 0;}
+.fountain-script .dialogue {margin:1em 20%;}
+.fountain-script .dialogue p {margin:0;}
+.fountain-script .parenthetical {padding-left:15%;}
+.fountain-script .centered {text-align:center;}
+.fountain-script .dual-dialogue {display:flex;gap:2em;}
+.fountain-script .dual-dialogue .dialogue {flex:1;margin:1em 0;}
+.fountain-script .page-break {break-after:page;}

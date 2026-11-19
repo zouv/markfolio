@@ -1,6 +1,6 @@
 use crate::library::{AppError, Result};
 use serde::Deserialize;
-use tauri::{menu::MenuItemKind, AppHandle};
+use tauri::{menu::MenuItemKind, WebviewWindow};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,11 +10,11 @@ pub struct MenuUpdate {
     pub checked: Option<bool>,
     pub shortcut: String,
 }
-pub fn update(app: &AppHandle, updates: Vec<MenuUpdate>) -> Result<()> {
-    if updates.len() > 64 {
+pub fn update(window: &WebviewWindow, updates: Vec<MenuUpdate>) -> Result<()> {
+    if updates.len() > 256 {
         return Err(AppError::new("MENU", "菜单配置过多"));
     }
-    let menu = app
+    let menu = window
         .menu()
         .ok_or_else(|| AppError::new("MENU", "菜单不可用"))?;
     let mut resolved = Vec::new();

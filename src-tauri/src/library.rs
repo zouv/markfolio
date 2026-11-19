@@ -24,12 +24,29 @@ pub use links::LinkResolution;
 mod files;
 #[allow(unused_imports)]
 pub use files::{AssetEntry, TrashEntry};
+#[path = "ai.rs"]
+mod ai;
+#[path = "crypto.rs"]
+mod crypto;
+#[path = "external.rs"]
+mod external;
+#[path = "plugin_service.rs"]
+mod plugin_service;
+#[allow(unused_imports)]
+pub use ai::AiConfig;
+#[allow(unused_imports)]
+pub use external::ExternalSession;
+pub fn ai_generate(config: AiConfig, prompt: &str, context: &str) -> Result<String> {
+    ai::generate(config, prompt, context)
+}
 #[path = "transfer.rs"]
 mod transfer;
-#[path="plugin_service.rs"]
-mod plugin_service;
-pub fn plugin_repository(url:&str)->Result<serde_json::Value>{plugin_service::repository(url)}
-pub fn remote_download(url:&str,limit:usize)->Result<Vec<u8>>{plugin_service::download(url,limit)}
+pub fn plugin_repository(url: &str) -> Result<serde_json::Value> {
+    plugin_service::repository(url)
+}
+pub fn remote_download(url: &str, limit: usize) -> Result<Vec<u8>> {
+    plugin_service::download(url, limit)
+}
 #[allow(unused_imports)]
 pub use transfer::{ImportPreview, TransferFile, TransferResult};
 pub fn import_preview(source: &Path, format: &str) -> Result<ImportPreview> {
@@ -39,6 +56,42 @@ pub fn import_preview(source: &Path, format: &str) -> Result<ImportPreview> {
 pub type SharedLibrary = Arc<Mutex<Library>>;
 pub type Result<T> = std::result::Result<T, AppError>;
 const MAX_DOCUMENT: u64 = 16 * 1024 * 1024;
+
+// Apply the caller's changes to the latest settings, preserving edits from other windows.
+pub fn merge_settings(
+    current: &serde_json::Value,
+    base: &serde_json::Value,
+    next: &serde_json::Value,
+) -> serde_json::Value {
+    if base == next {
+        return current.clone();
+    }
+    if let (Some(before), Some(proposed)) = (base.as_object(), next.as_object()) {
+        let mut merged = current.as_object().cloned().unwrap_or_default();
+        for key in before.keys().chain(proposed.keys()) {
+            let previous = before.get(key).unwrap_or(&serde_json::Value::Null);
+            match proposed.get(key) {
+                Some(value) if previous != value => {
+                    merged.insert(
+                        key.clone(),
+                        merge_settings(
+                            merged.get(key).unwrap_or(&serde_json::Value::Null),
+                            previous,
+                            value,
+                        ),
+                    );
+                }
+                None if before.contains_key(key) => {
+                    merged.remove(key);
+                }
+                _ => {}
+            }
+        }
+        serde_json::Value::Object(merged)
+    } else {
+        next.clone()
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AppError {
@@ -138,12 +191,15 @@ pub struct PluginBundle {
 
 struct Workspace {
     root: PathBuf,
+    changes: Arc<Mutex<std::collections::HashSet<String>>>,
     _watcher: Option<RecommendedWatcher>,
 }
 pub struct Library {
     data_dir: PathBuf,
     persisted: Persisted,
     opened: HashMap<String, Workspace>,
+    unlocked: Mutex<HashMap<String, crypto::Unlocked>>,
+    external_sessions: Mutex<std::collections::HashSet<(String, String)>>,
 }
 
 fn version(bytes: &[u8]) -> String {
@@ -172,6 +228,10 @@ fn hidden(name: &str) -> bool {
 fn is_markdown(path: &Path) -> bool {
     path.extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+}
+fn is_locked_note(path: &Path) -> bool {
+    path.extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("mflock"))
 }
 fn modified(path: &Path) -> u64 {
     fs::metadata(path)
@@ -273,6 +333,8 @@ impl Library {
             data_dir,
             persisted,
             opened: HashMap::new(),
+            unlocked: Mutex::new(HashMap::new()),
+            external_sessions: Mutex::new(std::collections::HashSet::new()),
         })
     }
     fn persist(&self) -> Result<()> {
@@ -288,12 +350,30 @@ impl Library {
         }
     }
     fn attach(&mut self, id: String, root: PathBuf, app: Option<&tauri::AppHandle>) {
+        let changes = Arc::new(Mutex::new(std::collections::HashSet::from([String::from(
+            "*",
+        )])));
         let watcher = app.and_then(|app| {
             let handle = app.clone();
             let workspace_id = id.clone();
+            let changed = changes.clone();
+            let watched_root = root.clone();
             let mut watcher =
                 notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
                     if event.is_ok_and(|e| {
+                        if let Ok(mut paths) = changed.lock() {
+                            for path in &e.paths {
+                                if let Ok(relative) = path.strip_prefix(&watched_root) {
+                                    let relative = relative_string(relative);
+                                    if !relative.split('/').any(hidden) {
+                                        paths.insert(relative);
+                                    }
+                                }
+                            }
+                            if e.need_rescan() {
+                                paths.insert("*".into());
+                            }
+                        }
                         !matches!(e.kind, notify::EventKind::Access(_))
                             && e.paths.iter().any(|p| {
                                 !p.file_name().is_some_and(|n| {
@@ -312,6 +392,7 @@ impl Library {
             id,
             Workspace {
                 root,
+                changes,
                 _watcher: watcher,
             },
         );
@@ -385,9 +466,19 @@ impl Library {
         })
     }
     pub fn close(&mut self, id: &str) -> Result<()> {
-        self.opened.remove(id);
+        let previous = self.persisted.workspaces.clone();
         self.persisted.workspaces.retain(|r| r.id != id);
-        self.persist()
+        if let Err(error) = self.persist() {
+            self.persisted.workspaces = previous;
+            return Err(error);
+        }
+        self.unlocked
+            .lock()
+            .map_err(|_| AppError::new("LOCK", "解锁状态不可用"))?
+            .retain(|key, _| !key.starts_with(&format!("{id}:")));
+        self.opened.remove(id);
+        self.update_external_sessions(id, "", None)?;
+        Ok(())
     }
     pub fn save_settings(&mut self, settings: serde_json::Value) -> Result<()> {
         if !settings.is_object() || settings.to_string().len() > 1024 * 1024 {
@@ -488,7 +579,14 @@ impl Library {
             return Err(AppError::new("LARGE", "文件超过 16 MB，请使用外部编辑器"));
         }
         let bytes = fs::read(file)?;
-        let (text, encoding) = decode(&bytes)?;
+        let clear;
+        let data = if crypto::locked(&bytes) {
+            clear = self.decode_locked(id, path, &bytes)?;
+            &*clear
+        } else {
+            &bytes
+        };
+        let (text, encoding) = decode(data)?;
         let line_ending = if text.contains("\r\n") { "crlf" } else { "lf" }.into();
         Ok(Document {
             path: path.into(),
@@ -517,11 +615,17 @@ impl Library {
                 "文件已被其他程序修改，请先比较或重新加载",
             ));
         }
-        let bytes = encode(text, encoding)?;
+        let clear = encode(text, encoding)?;
+        let bytes = if crypto::locked(&current) {
+            self.encode_locked(id, path, &clear, &current)?
+        } else {
+            clear
+        };
         if bytes.len() as u64 > MAX_DOCUMENT {
             return Err(AppError::new("LARGE", "文件超过编辑大小限制"));
         }
         atomic_write(&file, &bytes)?;
+        self.mark_changed(id, path);
         self.read(id, path)
     }
     pub fn create(&self, id: &str, path: &str, directory: bool) -> Result<()> {
@@ -537,6 +641,7 @@ impl Library {
                 .create_new(true)
                 .open(file)?;
         }
+        self.mark_changed(id, path);
         Ok(())
     }
     pub fn rename(&self, id: &str, from: &str, to: &str) -> Result<()> {
@@ -551,7 +656,8 @@ impl Library {
         if target.starts_with(&source) {
             return Err(AppError::new("PATH", "不能将文件夹移入自身"));
         }
-        links::rename(self, id, from, to, &source, &target)
+        links::rename(self, id, from, to, &source, &target)?;
+        self.update_external_sessions(id, from, Some(to))
     }
     pub fn delete(&self, id: &str, path: &str) -> Result<()> {
         if path.is_empty() {
@@ -561,10 +667,12 @@ impl Library {
         let file = self.root(id)?.join(checked_relative(path)?);
         if self.persisted.settings["trashMode"].as_str() == Some("system") {
             trash::delete(file)
-                .map_err(|_| AppError::new("TRASH", "无法移入系统回收站，原文件已保留"))
+                .map_err(|_| AppError::new("TRASH", "无法移入系统回收站，原文件已保留"))?;
+            self.mark_changed(id, path);
         } else {
-            self.recycle(id, path)
+            self.recycle(id, path)?;
         }
+        self.update_external_sessions(id, path, None)
     }
     pub fn duplicate(&self, id: &str, path: &str) -> Result<String> {
         let source = self.resolve(id, path, true)?;
@@ -608,12 +716,41 @@ impl Library {
                 let _ = fs::remove_file(target);
                 return Err(error.into());
             }
+            self.mark_changed(id, &destination);
             return Ok(destination);
         }
         Err(AppError::new("EXISTS", "副本名称过多，请先整理文件"))
     }
     pub fn reindex(&self, id: &str) -> Result<usize> {
         index::reindex(self, id)
+    }
+    pub fn mark_changed(&self, id: &str, path: &str) {
+        if let Some(workspace) = self.opened.get(id) {
+            if let Ok(mut changes) = workspace.changes.lock() {
+                changes.insert(path.into());
+            }
+        }
+    }
+    pub fn update_index(&self, id: &str, force: bool) -> Result<usize> {
+        let workspace = self
+            .opened
+            .get(id)
+            .ok_or_else(|| AppError::new("WORKSPACE", "工作目录已关闭"))?;
+        let changes = std::mem::take(
+            &mut *workspace
+                .changes
+                .lock()
+                .map_err(|_| AppError::new("INDEX", "索引状态不可用"))?,
+        );
+        let result = if force || changes.contains("*") {
+            self.reindex(id)
+        } else {
+            index::refresh(self, id, Some(&changes))
+        };
+        if result.is_err() {
+            self.mark_changed(id, "*");
+        }
+        result
     }
     pub fn catalog(&self, id: &str) -> Result<Vec<NoteSummary>> {
         index::catalog(self, id)
@@ -654,7 +791,7 @@ impl Library {
             "m4a" => "audio/mp4",
             "mp4" => "video/mp4",
             "webm" => "video/webm",
-            _ => return Err(AppError::new("ASSET", "该附件请使用系统程序打开")),
+            _ => "application/octet-stream",
         };
         Ok(format!(
             "data:{mime};base64,{}",
@@ -681,8 +818,11 @@ impl Library {
             .write(true)
             .create_new(true)
             .open(&destination)?;
-        std::io::copy(&mut input, &mut output)?;
-        output.sync_all()?;
+        if let Err(error) = std::io::copy(&mut input, &mut output).and_then(|_| output.sync_all()) {
+            drop(output);
+            let _ = fs::remove_file(&destination);
+            return Err(error.into());
+        }
         Ok(relative_string(
             destination
                 .strip_prefix(self.root(id)?)
@@ -697,7 +837,8 @@ impl Library {
         let mut plugins = Vec::new();
         for entry in fs::read_dir(directory)? {
             let entry = entry?;
-            if !entry.file_type()?.is_dir() {
+            if !entry.file_type()?.is_dir() || entry.file_name().to_string_lossy().starts_with('.')
+            {
                 continue;
             }
             if let Ok(plugin) = read_plugin(&entry.path()) {
@@ -706,29 +847,101 @@ impl Library {
         }
         Ok(plugins)
     }
-    pub fn install_plugin(&self, source: &Path) -> Result<PluginBundle> {
+    pub fn install_plugin(&mut self, source: &Path) -> Result<PluginBundle> {
         let plugin = read_plugin(source)?;
         let id = plugin.manifest["id"]
             .as_str()
             .ok_or_else(|| AppError::new("PLUGIN", "插件缺少 ID"))?;
-        let directory = self.data_dir.join("plugins").join(id);
-        fs::create_dir_all(&directory)?;
+        let plugins = self.data_dir.join("plugins");
+        fs::create_dir_all(&plugins)?;
+        let directory = plugins.join(id);
+        if fs::symlink_metadata(&directory).is_ok_and(|metadata| metadata.file_type().is_symlink())
+        {
+            return Err(AppError::new("PATH", "插件目录不能是符号链接"));
+        }
+        let stage = tempfile::Builder::new()
+            .prefix(".install-")
+            .tempdir_in(&plugins)?;
+        let backup = tempfile::Builder::new()
+            .prefix(".previous-")
+            .tempdir_in(&plugins)?;
+        let previous = backup.path().join("content");
         let manifest = serde_json::to_vec_pretty(&plugin.manifest)
             .map_err(|_| AppError::new("PLUGIN", "插件清单无效"))?;
-        atomic_write(&directory.join("main.js"), plugin.source.as_bytes())?;
-        atomic_write(&directory.join("styles.css"), plugin.styles.as_bytes())?;
-        atomic_write(&directory.join("manifest.json"), &manifest)?;
+        atomic_write(&stage.path().join("main.js"), plugin.source.as_bytes())?;
+        atomic_write(&stage.path().join("styles.css"), plugin.styles.as_bytes())?;
+        atomic_write(&stage.path().join("manifest.json"), &manifest)?;
+        let replacing = directory.exists();
+        if replacing {
+            fs::rename(&directory, &previous)?;
+        }
+        if let Err(error) = fs::rename(stage.path(), &directory) {
+            if replacing && fs::rename(&previous, &directory).is_err() {
+                let _ = backup.keep();
+            }
+            return Err(error.into());
+        }
+        let settings = self.persisted.settings.clone();
+        if let Some(workspaces) = self.persisted.settings["plugins"].as_object_mut() {
+            for configurations in workspaces.values_mut() {
+                if let Some(config) = configurations
+                    .get_mut(id)
+                    .and_then(serde_json::Value::as_object_mut)
+                {
+                    config.insert("enabled".into(), serde_json::Value::Bool(false));
+                    config.insert("permissions".into(), serde_json::json!([]));
+                }
+            }
+        }
+        if let Err(error) = self.persist() {
+            self.persisted.settings = settings;
+            let removed = fs::rename(&directory, stage.path()).is_ok();
+            let restored = !replacing || fs::rename(&previous, &directory).is_ok();
+            if !removed || !restored {
+                let _ = backup.keep();
+                let _ = stage.keep();
+                return Err(AppError::new(
+                    "PLUGIN",
+                    "安装未完成，插件暂存文件已保留，请检查目录权限",
+                ));
+            }
+            return Err(error);
+        }
         Ok(plugin)
     }
 }
 
 fn read_plugin(directory: &Path) -> Result<PluginBundle> {
+    if fs::metadata(directory.join("manifest.json"))?.len() > 32 * 1024 {
+        return Err(AppError::new("PLUGIN", "插件清单过大"));
+    }
     let manifest_bytes = fs::read(directory.join("manifest.json"))?;
     if manifest_bytes.len() > 32 * 1024 {
         return Err(AppError::new("PLUGIN", "插件清单过大"));
     }
     let manifest: serde_json::Value = serde_json::from_slice(&manifest_bytes)
         .map_err(|_| AppError::new("PLUGIN", "插件清单无效"))?;
+    validate_plugin_manifest(&manifest)?;
+    let main = directory.join("main.js");
+    if fs::metadata(&main)?.len() > 4 * 1024 * 1024 {
+        return Err(AppError::new("PLUGIN", "插件入口过大"));
+    }
+    let source = fs::read_to_string(main)?;
+    let styles = match fs::metadata(directory.join("styles.css")) {
+        Ok(metadata) if metadata.len() > 1024 * 1024 => {
+            return Err(AppError::new("PLUGIN", "插件样式过大"))
+        }
+        Ok(_) => fs::read_to_string(directory.join("styles.css"))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(e.into()),
+    };
+    Ok(PluginBundle {
+        manifest,
+        source,
+        styles,
+    })
+}
+fn validate_plugin_manifest(manifest: &serde_json::Value) -> Result<()> {
     let id = manifest["id"].as_str().unwrap_or("");
     if id.is_empty()
         || id.len() > 80
@@ -741,35 +954,48 @@ fn read_plugin(directory: &Path) -> Result<PluginBundle> {
             "插件 ID 必须为小写字母、数字或连字符",
         ));
     }
-    if ![Some(1),Some(2)].contains(&manifest["sdkVersion"].as_u64()) {
+    if ![Some(1), Some(2)].contains(&manifest["sdkVersion"].as_u64()) {
         return Err(AppError::new("PLUGIN", "插件需要 SDK 版本 1 或 2"));
     }
     for field in ["name", "version", "description"] {
-        if manifest[field].as_str().is_none() {
+        if !manifest[field].as_str().is_some_and(|value| {
+            value.len() <= 2000 && (field == "description" || !value.trim().is_empty())
+        }) {
             return Err(AppError::new("PLUGIN", "插件清单需要名称、版本和描述"));
         }
     }
     if ["daily-note", "markdown-tools", "word-statistics"].contains(&id) {
         return Err(AppError::new("PLUGIN", "插件 ID 与内置插件冲突"));
     }
-    let main = directory.join("main.js");
-    if fs::metadata(&main)?.len() > 4 * 1024 * 1024 {
-        return Err(AppError::new("PLUGIN", "插件入口过大"));
+    if manifest
+        .get("runtime")
+        .is_some_and(|runtime| !matches!(runtime.as_str(), Some("isolated" | "trusted")))
+    {
+        return Err(AppError::new("PLUGIN", "插件运行模式无效"));
     }
-    let source = fs::read_to_string(main)?;
-    let styles = match fs::read_to_string(directory.join("styles.css")) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e.into()),
-    };
-    if styles.len() > 1024 * 1024 {
-        return Err(AppError::new("PLUGIN", "插件样式过大"));
+    if let Some(permissions) = manifest.get("permissions") {
+        if !permissions.as_array().is_some_and(|values| {
+            values.len() <= 20
+                && values.iter().all(|value| {
+                    matches!(
+                        value.as_str(),
+                        Some(
+                            "files:read"
+                                | "files:write"
+                                | "editor"
+                                | "commands"
+                                | "views"
+                                | "settings"
+                                | "events"
+                                | "host:full"
+                        )
+                    )
+                })
+        }) {
+            return Err(AppError::new("PLUGIN", "插件权限清单无效"));
+        }
     }
-    Ok(PluginBundle {
-        manifest,
-        source,
-        styles,
-    })
+    Ok(())
 }
 
 #[cfg(test)]
@@ -956,7 +1182,7 @@ mod tests {
 
     #[test]
     fn invalid_plugin_manifest_cannot_select_an_installation_path() {
-        let (temp, lib, _id, _root) = library();
+        let (temp, mut lib, _id, _root) = library();
         let plugin = temp.path().join("plugin");
         fs::create_dir(&plugin).expect("dir");
         fs::write(
@@ -990,5 +1216,320 @@ mod tests {
         ] {
             assert!(lib.external_link(link).is_err(), "{link}");
         }
+    }
+    #[test]
+    fn settings_merge_preserves_other_window_changes_and_plugin_data() {
+        let base = serde_json::json!({"theme":"light","fontSize":14,"sessions":{"a":{"file":"a.md"}},"plugins":{"a":{"p":{"enabled":true,"data":{"left":1,"right":1}}}}});
+        let current = serde_json::json!({"theme":"dark","fontSize":14,"sessions":{"a":{"file":"b.md"}},"plugins":{"a":{"p":{"enabled":true,"data":{"left":2,"right":1}}}}});
+        let next = serde_json::json!({"theme":"light","fontSize":18,"sessions":{"a":{"file":"a.md"}},"plugins":{"a":{"p":{"enabled":true,"data":{"left":1,"right":2}}}}});
+        let merged = merge_settings(&current, &base, &next);
+        assert_eq!(merged["theme"], "dark");
+        assert_eq!(merged["fontSize"], 18);
+        assert_eq!(merged["sessions"]["a"]["file"], "b.md");
+        assert_eq!(
+            merged["plugins"]["a"]["p"]["data"],
+            serde_json::json!({"left":2,"right":2})
+        );
+    }
+    #[test]
+    fn incremental_index_search_dates_and_or_exclusions_follow_file_changes() {
+        let (_temp, lib, id, root) = library();
+        fs::write(root.join("alpha.md"),"---\ntitle: Alpha\ntags: [work]\ncreated: '2020-01-02T00:00:00Z'\nupdated: '2021-02-03T00:00:00Z'\ntype: todo\ndue: '2030-04-05T12:00:00Z'\n---\nalpha unique content\n").unwrap();
+        fs::write(
+            root.join("beta.md"),
+            "---\ntitle: Beta\ntags: [hidden]\n---\nbeta body\n",
+        )
+        .unwrap();
+        assert_eq!(lib.update_index(&id, false).unwrap(), 2);
+        assert_eq!(
+            lib.search(&id, "created:<20210101 updated:>=2021-02-03")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            lib.search(&id, "type:todo due:=2030-04-05").unwrap().len(),
+            1
+        );
+        assert_eq!(
+            lib.search(&id, "alpha OR beta -tag:hidden").unwrap().len(),
+            1
+        );
+        assert_eq!(
+            lib.search(&id, "any:1 alpha beta -tag:hidden")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(lib.search(&id, "alpha OR").unwrap().len(), 1);
+        fs::create_dir(root.join("sub")).unwrap();
+        lib.rename(&id, "alpha.md", "sub/alpha.md").unwrap();
+        fs::write(root.join("sub/new.md"), "brand new searchable note").unwrap();
+        lib.mark_changed(&id, "sub");
+        assert_eq!(lib.update_index(&id, false).unwrap(), 3);
+        assert_eq!(lib.search(&id, "unique").unwrap()[0].path, "sub/alpha.md");
+        fs::remove_file(root.join("beta.md")).unwrap();
+        lib.mark_changed(&id, "beta.md");
+        assert_eq!(lib.update_index(&id, false).unwrap(), 2);
+        assert!(lib.search(&id, "beta").unwrap().is_empty());
+    }
+    #[test]
+    fn encrypted_note_roundtrip_keeps_encoding_versions_and_plaintext_out_of_index() {
+        let (temp, mut lib, id, root) = library();
+        let private = "PRIVATE_SENTINEL_FOR_INDEX_TEST";
+        fs::write(
+            root.join("private.md"),
+            encode(&format!("# {private}\r\n"), "utf16le").unwrap(),
+        )
+        .unwrap();
+        lib.update_index(&id, false).unwrap();
+        assert_eq!(lib.search(&id, private).unwrap().len(), 1);
+        let original = lib.read(&id, "private.md").unwrap();
+        assert_eq!(
+            lib.lock_action(
+                &id,
+                "private.md",
+                "lock",
+                "correct password".into(),
+                Some("stale")
+            )
+            .unwrap_err()
+            .code,
+            "CONFLICT"
+        );
+        let path = lib
+            .lock_action(
+                &id,
+                "private.md",
+                "lock",
+                "correct password".into(),
+                Some(&original.version),
+            )
+            .unwrap();
+        assert!(!root.join("private.md").exists());
+        assert_eq!(lib.read(&id, &path).unwrap_err().code, "LOCKED");
+        lib.update_index(&id, false).unwrap();
+        assert!(lib.search(&id, private).unwrap().is_empty());
+        for file in fs::read_dir(temp.path().join("app/indexes")).unwrap() {
+            let bytes = fs::read(file.unwrap().path()).unwrap();
+            assert!(!bytes
+                .windows(private.len())
+                .any(|s| s == private.as_bytes()));
+        }
+        assert_eq!(
+            lib.lock_action(&id, &path, "unlock", "wrong password".into(), None)
+                .unwrap_err()
+                .code,
+            "PASSWORD"
+        );
+        lib.lock_action(&id, &path, "unlock", "correct password".into(), None)
+            .unwrap();
+        let unlocked = lib.read(&id, &path).unwrap();
+        assert_eq!(unlocked.encoding, "utf16le");
+        let saved = lib
+            .write(
+                &id,
+                &path,
+                "# edited\r\n",
+                &unlocked.version,
+                &unlocked.encoding,
+            )
+            .unwrap();
+        assert_eq!(saved.line_ending, "crlf");
+        lib.update_index(&id, false).unwrap();
+        assert!(lib.catalog(&id).unwrap()[0].snippet.is_empty());
+        lib.lock_action(&id, &path, "close", String::new(), None)
+            .unwrap();
+        assert_eq!(lib.read(&id, &path).unwrap_err().code, "LOCKED");
+        lib.lock_action(&id, &path, "unlock", "correct password".into(), None)
+            .unwrap();
+        fs::write(root.join("private.md"), "existing note").unwrap();
+        assert_eq!(
+            lib.lock_action(&id, &path, "decrypt", String::new(), Some(&saved.version))
+                .unwrap_err()
+                .code,
+            "EXISTS"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("private.md")).unwrap(),
+            "existing note"
+        );
+        fs::remove_file(root.join("private.md")).unwrap();
+        let plain = lib
+            .lock_action(&id, &path, "decrypt", String::new(), Some(&saved.version))
+            .unwrap();
+        assert_eq!(lib.read(&id, &plain).unwrap().text, "# edited\r\n");
+        assert!(fs::read(root.join(plain))
+            .unwrap()
+            .starts_with(&[0xff, 0xfe]));
+        assert!(!root.join(path).exists());
+    }
+    #[test]
+    fn trash_restore_never_overwrites_and_recreates_missing_parent_directories() {
+        let (_temp, lib, id, root) = library();
+        lib.create(&id, "sub", true).unwrap();
+        fs::write(root.join("sub/note.md"), "original").unwrap();
+        lib.recycle(&id, "sub/note.md").unwrap();
+        let entry = lib.trash_entries(&id).unwrap().remove(0);
+        fs::write(root.join("sub/note.md"), "new").unwrap();
+        assert_eq!(
+            lib.trash_action(&id, &entry.id, "restore")
+                .unwrap_err()
+                .code,
+            "EXISTS"
+        );
+        assert_eq!(fs::read_to_string(root.join("sub/note.md")).unwrap(), "new");
+        fs::remove_file(root.join("sub/note.md")).unwrap();
+        fs::remove_dir(root.join("sub")).unwrap();
+        lib.trash_action(&id, &entry.id, "restore").unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("sub/note.md")).unwrap(),
+            "original"
+        );
+        assert!(lib.trash_entries(&id).unwrap().is_empty());
+    }
+    #[test]
+    fn installed_plugin_permissions_versions_and_safe_mode_are_checked_on_every_request() {
+        let (temp, mut lib, id, root) = library();
+        let folder = temp.path().join("plugin");
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("manifest.json"),r#"{"id":"permission-test","name":"Permission test","description":"Synthetic permission test","version":"1.0.0","sdkVersion":2,"runtime":"isolated","permissions":["files:read","files:write"]}"#).unwrap();
+        fs::write(folder.join("main.js"), "export default class {};").unwrap();
+        lib.install_plugin(&folder).unwrap();
+        fs::write(root.join("note.md"), "original\r\n").unwrap();
+        let config = serde_json::json!({"plugins":{&id:{"permission-test":{"enabled":true,"permissions":["files:read"]}}}});
+        lib.save_settings(config.clone()).unwrap();
+        let doc = lib
+            .plugin_request(&id, "permission-test", "read", "note.md", "", None)
+            .unwrap();
+        assert_eq!(
+            lib.plugin_request(
+                &id,
+                "permission-test",
+                "write",
+                "note.md",
+                "new",
+                Some(doc["version"].as_str().unwrap())
+            )
+            .unwrap_err()
+            .code,
+            "PERMISSION"
+        );
+        let mut config = config;
+        config["plugins"][&id]["permission-test"]["permissions"] =
+            serde_json::json!(["files:read", "files:write"]);
+        lib.save_settings(config.clone()).unwrap();
+        assert_eq!(
+            lib.plugin_request(&id, "permission-test", "write", "note.md", "new\n", None)
+                .unwrap_err()
+                .code,
+            "CONFLICT"
+        );
+        lib.plugin_request(
+            &id,
+            "permission-test",
+            "write",
+            "note.md",
+            "new\n",
+            doc["version"].as_str(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(root.join("note.md")).unwrap(), "new\r\n");
+        assert_eq!(
+            lib.plugin_request(
+                &id,
+                "permission-test",
+                "write",
+                "note.md",
+                "stale",
+                doc["version"].as_str()
+            )
+            .unwrap_err()
+            .code,
+            "CONFLICT"
+        );
+        assert_eq!(
+            lib.plugin_request(
+                &id,
+                "permission-test",
+                "read",
+                ".markfolio/secret.md",
+                "",
+                None
+            )
+            .unwrap_err()
+            .code,
+            "PERMISSION"
+        );
+        config["safeMode"] = serde_json::json!(true);
+        lib.save_settings(config).unwrap();
+        assert_eq!(
+            lib.plugin_request(&id, "permission-test", "read", "note.md", "", None)
+                .unwrap_err()
+                .code,
+            "PERMISSION"
+        );
+    }
+    #[test]
+    fn plugin_replacement_and_uninstall_preserve_state_if_persistence_fails() {
+        let (temp, mut lib, id, _root) = library();
+        let source = temp.path().join("plugin-source");
+        fs::create_dir(&source).unwrap();
+        let manifest = serde_json::json!({"id":"transaction-test","name":"Synthetic plugin","description":"Synthetic plugin transaction","version":"1.0.0","sdkVersion":2,"permissions":["editor"]});
+        fs::write(
+            source.join("manifest.json"),
+            serde_json::to_vec(&manifest).unwrap(),
+        )
+        .unwrap();
+        fs::write(
+            source.join("main.js"),
+            "export default class { /* original */ }",
+        )
+        .unwrap();
+        lib.install_plugin(&source).unwrap();
+        let settings = serde_json::json!({"plugins":{&id:{"transaction-test":{"enabled":true,"permissions":["editor"],"data":{"custom":1}}}}});
+        lib.save_settings(settings.clone()).unwrap();
+        lib.install_plugin(&source).unwrap();
+        assert_eq!(
+            lib.snapshot().settings["plugins"][&id]["transaction-test"]["enabled"],
+            false
+        );
+        assert_eq!(
+            lib.snapshot().settings["plugins"][&id]["transaction-test"]["permissions"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            lib.snapshot().settings["plugins"][&id]["transaction-test"]["data"]["custom"],
+            1
+        );
+        lib.save_settings(settings.clone()).unwrap();
+        fs::write(
+            source.join("main.js"),
+            "export default class { /* replacement */ }",
+        )
+        .unwrap();
+        let state_file = lib.data_dir.join("state.json");
+        fs::remove_file(&state_file).unwrap();
+        fs::create_dir(&state_file).unwrap();
+        assert!(lib.install_plugin(&source).is_err());
+        assert!(lib.plugins().unwrap()[0].source.contains("original"));
+        assert_eq!(lib.snapshot().settings, settings);
+        assert!(lib.uninstall_plugin("transaction-test").is_err());
+        assert_eq!(lib.plugins().unwrap().len(), 1);
+        assert_eq!(lib.snapshot().settings, settings);
+        fs::remove_dir(&state_file).unwrap();
+        lib.uninstall_plugin("transaction-test").unwrap();
+        assert!(lib.plugins().unwrap().is_empty());
+        assert!(lib.snapshot().settings["plugins"][&id]
+            .get("transaction-test")
+            .is_none());
+        let mut malformed = manifest;
+        malformed["permissions"] = serde_json::json!("editor");
+        fs::write(
+            source.join("manifest.json"),
+            serde_json::to_vec(&malformed).unwrap(),
+        )
+        .unwrap();
+        assert!(lib.install_plugin(&source).is_err());
     }
 }

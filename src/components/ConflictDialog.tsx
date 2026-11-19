@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useState } from "react";
 import * as api from "../api";
 import { useApp } from "../store";
@@ -66,15 +67,15 @@ export default function ConflictDialog({
   }
   return (
     <>
-      <h2>比较外部修改</h2>
-      <p className="muted">选择要保留的内容。替换前仍会检查磁盘版本。</p>
+      <h2>{t("比较外部修改")}</h2>
+      <p className="muted">{t("选择要保留的内容。替换前仍会检查磁盘版本。")}</p>
       <div className="conflict-compare">
         <section>
-          <h3>你的编辑</h3>
+          <h3>{t("你的编辑")}</h3>
           <pre>{buffer?.text}</pre>
         </section>
         <section>
-          <h3>磁盘文件</h3>
+          <h3>{t("磁盘文件")}</h3>
           <pre>{disk}</pre>
         </section>
       </div>
@@ -89,15 +90,13 @@ export default function ConflictDialog({
               .catch((error) => setError(displayError(error)));
           }}
         >
-          使用磁盘内容
-        </button>
+          {t("使用磁盘内容")}</button>
         <button
           className="primary"
           disabled={!version}
           onClick={() => void keepMine()}
         >
-          保留我的编辑并保存
-        </button>
+          {t("保留我的编辑并保存")}</button>
       </div>
     </>
   );

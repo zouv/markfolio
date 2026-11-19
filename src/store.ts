@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import { create } from "zustand";
 import * as defaultApi from "./api";
 import {
@@ -12,7 +13,7 @@ import {
   type WorkspaceInfo,
   type NoteSummary,
 } from "./types";
-import { settingsDraftPatch } from "./settings";
+import { settingsDraftPatch, mergeWindowSettings } from "./settings";
 
 export type Buffer = Document & {
   savedText: string;
@@ -69,6 +70,7 @@ export type State = {
   selectFiles(id: string, paths: string[], anchor?: string): void;
   setNotice(message: string): void;
   persistSettings(): Promise<void>;
+  receiveSettings(settings: Settings): void;
   search(id: string, query: string): Promise<void>;
   reindex(id: string, notify?: boolean): Promise<void>;
   navigate(id: string, direction: number): Promise<void>;
@@ -104,6 +106,12 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   const queues = new Map<string, Promise<void>>();
   let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  let diskSettings: Settings | undefined;
+  const mainWindow = () => api.isMainWindow?.() !== false;
+  function persistenceSnapshot(state: State, candidate = state.settings): Settings {
+    if (!mainWindow()) return {...candidate, activeWorkspace:diskSettings?.activeWorkspace ?? candidate.activeWorkspace, sessions:diskSettings?.sessions ?? candidate.sessions};
+    return {...candidate, activeWorkspace:state.active, sessions:{...candidate.sessions,...Object.fromEntries(Object.entries(state.sessions).map(([id,session])=>[id,{folder:session.folder,file:session.file,expanded:session.expanded}]))}};
+  }
 
   const store = create<State>((set, get) => {
     function patchSession(id: string, patch: Partial<Session>): void {
@@ -163,14 +171,18 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
               sessions: snapshot.settings?.sessions ?? {},
               plugins: snapshot.settings?.plugins ?? {},
               shortcuts: snapshot.settings?.shortcuts ?? {},
+              markdownExtensions:{...defaultSettings.markdownExtensions,...snapshot.settings?.markdownExtensions},
             };
+            diskSettings = settings;
+            const context=api.windowContext?.();
+            const workspaces=!mainWindow()&&context?.workspace?snapshot.workspaces.filter(info=>info.id===context.workspace):snapshot.workspaces;
             const sessions = Object.fromEntries(
-              snapshot.workspaces.map((info) => [
+              workspaces.map((info) => [
                 info.id,
                 initialSession(info, settings),
               ]),
             );
-            const order = snapshot.workspaces.map((info) => info.id);
+            const order = workspaces.map((info) => info.id);
             set({
               ready: true,
               settings,
@@ -182,10 +194,10 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
               version: info.version,
               plugins,
             });
-            for (const info of snapshot.workspaces) {
+            for (const info of workspaces) {
               if (!info.available) continue;
               await get().refresh(info.id);
-              const previous = settings.sessions[info.id]?.file;
+              const previous = !mainWindow()&&context?.note?context.note:settings.sessions[info.id]?.file;
               if (previous)
                 await get()
                   .openDocument(info.id, previous)
@@ -200,8 +212,9 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         return initializing;
       },
       async openWorkspace() {
+        if(!mainWindow()){get().setNotice(t("请在主窗口打开工作目录"));return;}
         if (!api.isTauriRuntime()) {
-          get().setNotice("请运行桌面版以选择本地目录；浏览器仅用于界面预览。");
+          get().setNotice(t("请运行桌面版以选择本地目录；浏览器仅用于界面预览。"));
           return;
         }
         try {
@@ -234,10 +247,11 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         persist();
       },
       async closeWorkspace(id) {
+        if(!mainWindow())throw new Error(t("请在主窗口关闭工作目录"));
         const session = get().sessions[id];
         if (!session) return;
         if (session.mutating)
-          throw new Error("正在处理文件，请稍后关闭工作目录");
+          throw new Error(t("正在处理文件，请稍后关闭工作目录"));
         for (const [path, buffer] of Object.entries(session.documents))
           if (buffer.dirty) await get().save(id, path);
         set((state) => ({
@@ -300,7 +314,7 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
               }
               if (current.dirty)
                 patchBuffer(id, path, {
-                  error: "磁盘文件已变化。你的编辑仍在内存中，请先比较再保存。",
+                  error: t("磁盘文件已变化。你的编辑仍在内存中，请先比较再保存。"),
                   errorCode: "CONFLICT",
                 });
               else
@@ -361,14 +375,14 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
       },
       async openLink(id, from, target, wiki = false) {
         const link = await api.resolveNoteLink(id, from, target, wiki);
-        if (!link.path) throw new Error(link.candidates.length ? `存在同名笔记，请使用完整路径：${link.candidates.join("、")}` : "链接文件不存在");
+        if (!link.path) throw new Error(link.candidates.length ? t("存在同名笔记，请使用完整路径：{0}", link.candidates.join("、")) : t("链接文件不存在"));
         await get().openDocument(id, link.path);
         patchSession(id, { fragment: link.fragment });
       },
       async openDocument(id, path, navigate = true) {
         const session = get().sessions[id];
         if (!session) return;
-        if (session.mutating) throw new Error("正在处理文件，请稍后打开文档");
+        if (session.mutating) throw new Error(t("正在处理文件，请稍后打开文档"));
         const request = (opening.get(id) ?? 0) + 1;
         opening.set(id, request);
         if (!session.documents[path]) {
@@ -420,7 +434,7 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
       },
       edit(id, path, text) {
         if (get().sessions[id]?.mutating)
-          throw new Error("正在处理文件，请稍后编辑");
+          throw new Error(t("正在处理文件，请稍后编辑"));
         const buffer = get().sessions[id]?.documents[path];
         if (!buffer) return;
         patchBuffer(id, path, {
@@ -504,24 +518,14 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
           .then(async () => {
             const patch = settingsDraftPatch(get().settings, base, draft);
             const candidate = { ...get().settings, ...patch };
-            const snapshot = {
-              ...candidate,
-              activeWorkspace: get().active,
-              sessions: {
-                ...candidate.sessions,
-                ...Object.fromEntries(
-                  Object.entries(get().sessions).map(([id, session]) => [
-                    id,
-                    {
-                      folder: session.folder,
-                      file: session.file,
-                      expanded: session.expanded,
-                    },
-                  ]),
-                ),
-              },
-            };
-            if (api.isTauriRuntime()) await api.saveSettings(snapshot);
+            if (api.isTauriRuntime()) {
+              const before = get().settings;
+              const saved = await api.saveSettings(persistenceSnapshot(get(),candidate),diskSettings);
+              if (saved && typeof saved === "object") {
+                diskSettings = {...defaultSettings,...saved,markdownExtensions:{...defaultSettings.markdownExtensions,...saved.markdownExtensions}};
+                set({settings:mergeWindowSettings(diskSettings,before,get().settings)});
+              }
+            }
             // Background plugin writes may have arrived during the disk write.
             const latestPatch = settingsDraftPatch(get().settings, base, draft);
             set((state) => ({
@@ -539,7 +543,7 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         if (!api.isTauriRuntime()) return;
         const task = settingsQueue
           .catch(() => {})
-          .then(() => {
+          .then(async () => {
             const state = get();
             const sessions = {
               ...state.settings.sessions,
@@ -559,10 +563,23 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
               activeWorkspace: state.active,
               sessions,
             };
-            return api.saveSettings(settings);
+            const before = state.settings;
+            const saved = await api.saveSettings(mainWindow()?settings:persistenceSnapshot(state),diskSettings);
+            if (saved && typeof saved === "object") {
+              diskSettings = {...defaultSettings,...saved,markdownExtensions:{...defaultSettings.markdownExtensions,...saved.markdownExtensions}};
+              set({settings:mergeWindowSettings(diskSettings,before,get().settings)});
+            }
           });
         settingsQueue = task.then(() => {}, () => {});
         await task;
+      },
+      receiveSettings(settings) {
+        const incoming = {...defaultSettings,...settings,markdownExtensions:{...defaultSettings.markdownExtensions,...settings.markdownExtensions}};
+        const previous = get().settings;
+        const merged = diskSettings ? mergeWindowSettings(incoming,diskSettings,previous) : incoming;
+        diskSettings = incoming;
+        set({settings:merged});
+        if (previous.showHidden !== merged.showHidden) for (const id of get().order) void get().refresh(id);
       },
       setNotice(message) {
         clearTimeout(noticeTimer);
@@ -582,12 +599,12 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         if (!get().sessions[id] || get().sessions[id].indexing) return;
         patchSession(id, { indexing: true });
         try {
-          const count = await api.rebuildIndex(id);
+          const count = await api.rebuildIndex(id, notify);
           const catalog = await api.catalogDocuments(id);
           patchSession(id, { indexing: false, catalog });
           const query = get().sessions[id]?.query;
           if (query) await get().search(id, query);
-          if (notify) get().setNotice(`索引已更新 · ${count} 篇 Markdown 文档`);
+          if (notify) get().setNotice(t("索引已更新 · {0} 篇 Markdown 文档", count));
         } catch (error) {
           patchSession(id, { indexing: false });
           get().setNotice(displayError(error));
@@ -611,7 +628,7 @@ export async function flushDocuments(): Promise<void> {
   for (let attempt = 0; attempt < 10; attempt++) {
     const state = useApp.getState();
     if (Object.values(state.sessions).some((session) => session.mutating))
-      throw new Error("正在处理文件，请稍后关闭");
+      throw new Error(t("正在处理文件，请稍后关闭"));
     const dirty = Object.entries(state.sessions).flatMap(([id, session]) =>
       Object.entries(session.documents)
         .filter(([, buffer]) => buffer.dirty)
@@ -623,7 +640,7 @@ export async function flushDocuments(): Promise<void> {
     }
     for (const [id, path] of dirty) await state.save(id, path);
   }
-  throw new Error("文档仍在变化，请停止输入后重试关闭");
+  throw new Error(t("文档仍在变化，请停止输入后重试关闭"));
 }
 
 export async function relocateBuffers(

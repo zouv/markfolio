@@ -1,12 +1,14 @@
 import { defineConfig } from "@playwright/test";
 import { readFileSync } from "node:fs";
 const tauri = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+const testUrl = new URL(tauri.build.devUrl);
+testUrl.port = String(Number(testUrl.port) + 10000);
 export default defineConfig({
   testDir: "tests/ui",
   fullyParallel: false,
   workers: 1,
   use: {
-    baseURL: tauri.build.devUrl,
+    baseURL: testUrl.origin,
     channel: "chrome",
     headless: true,
     viewport: { width: 1440, height: 900 },
@@ -14,9 +16,9 @@ export default defineConfig({
   outputDir: ".runtime/ui-results",
   reporter: "list",
   webServer: {
-    command: "npm run web:dev",
-    url: tauri.build.devUrl,
-    reuseExistingServer: true,
+    command: `npm run web:dev -- --port ${testUrl.port} --strictPort`,
+    url: testUrl.origin,
+    reuseExistingServer: false,
     timeout: 30000,
   },
 });

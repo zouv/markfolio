@@ -13,7 +13,12 @@ const make = (id, name) => {
   }));
   return { info: { id, name, available: true }, folder: '', file: paths[0], expanded: [''],
     tree: { '': paths.map(path => ({ name: path, path, isDirectory: false, size: 100, modified: Date.now() })) },
-    documents, query: '', hits: [], history: [paths[0]], historyIndex: 0, indexing: false, selected: [paths[0]], selectionAnchor: paths[0], mutating: false };
+    documents, query: '', hits: [], history: [paths[0]], historyIndex: 0, indexing: false, selected: [paths[0]], selectionAnchor: paths[0], mutating: false, catalog: [],view:'folder',tag:'',fragment:'' };
+};
+window.mountTestComponent = (component, props) => {
+  const node = document.createElement('div');node.id = 'component-test';node.style.cssText = 'position:fixed;inset:0;background:white;z-index:5000;padding:20px';document.body.append(node);
+  const root = createRoot(node);root.render(React.createElement(component, props));
+  return next => root.render(React.createElement(component, next));
 };
 useApp.setState({ ready: true, version: 'test', settings: { ...defaultSettings, autoSave: false }, order: ['notes', 'work'], active: 'notes',
   sessions: { notes: make('notes', '我的笔记'), work: make('work', '工作文档') }, refresh: async () => {}, reindex: async () => {} });

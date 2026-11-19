@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 export type AppInfo = { name: string; version: string };
 export type WorkspaceInfo = { id: string; name: string; available: boolean };
 export type FileEntry = {
@@ -56,12 +57,21 @@ export type Settings = {
   showHidden: boolean;
   showSidebar: boolean;
   showList: boolean;
+  showNoteCounts: boolean;
+  uncompletedTodosOnTop: boolean;
+  showCompletedTodos: boolean;
+  tabMovesFocus: boolean;
+  layoutCycle: "split-editor-preview" | "editor-preview" | "editor-split" | "split-preview";
   mode: "split" | "editor" | "preview";
   wordWrap: boolean;
   lineNumbers: boolean;
   sidebarWidth: number;
   listWidth: number;
   sort: "name" | "modified" | "created" | "size" | "manual";
+  perFolderSort:boolean;
+  folderSorts:Record<string,Record<string,{sort:Settings["sort"];reverseSort:boolean}>>;
+  folderSort:"name"|"modified";
+  folderSortReverse:boolean;
   manualOrder: Record<string, string[]>;
   listStyle: "cards" | "details";
   editorMode: "markdown" | "rich";
@@ -76,7 +86,7 @@ export type Settings = {
   rawHtml: boolean;
   remoteImages: boolean;
   zoom: number;
-  layoutOrder: "tree-list-editor" | "list-tree-editor" | "editor-list-tree";
+  layoutOrder: "tree-list-editor" | "tree-editor-list" | "list-tree-editor" | "list-editor-tree" | "editor-tree-list" | "editor-list-tree";
   menuVisible: boolean;
   locale: "zh-CN" | "en";
   indexMaxMb: number;
@@ -92,6 +102,7 @@ export type Settings = {
   reverseSort: boolean;
   math: boolean;
   diagrams: boolean;
+  markdownExtensions: MarkdownExtensions;
   shortcuts: Record<string, string>;
   externalLinkHosts: string[];
   activeWorkspace: string;
@@ -105,6 +116,8 @@ export type Snapshot = {
   workspaces: WorkspaceInfo[];
   settings: Partial<Settings>;
 };
+export type MarkdownExtensions = { footnotes:boolean; mark:boolean; sub:boolean; sup:boolean; deflist:boolean; abbr:boolean; ins:boolean; multiTable:boolean; toc:boolean; abc:boolean; fountain:boolean };
+export const defaultMarkdownExtensions:MarkdownExtensions={footnotes:true,mark:true,sub:true,sup:true,deflist:true,abbr:true,ins:true,multiTable:true,toc:true,abc:true,fountain:true};
 export const defaultSettings: Settings = {
   theme: "light",
   fontSize: 15,
@@ -115,12 +128,18 @@ export const defaultSettings: Settings = {
   showHidden: false,
   showSidebar: true,
   showList: true,
+  showNoteCounts: true,
+  uncompletedTodosOnTop: true,
+  showCompletedTodos: true,
+  tabMovesFocus: false,
+  layoutCycle: "split-editor-preview",
   mode: "split",
   wordWrap: true,
   lineNumbers: true,
   sidebarWidth: 246,
   listWidth: 276,
   sort: "name",
+  perFolderSort:false,folderSorts:{},folderSort:"name",folderSortReverse:false,
   manualOrder: {}, listStyle: "cards", editorMode: "markdown", keyMode: "default",
   spellcheck: false, inlineWidgets: false, htmlPaste: true,
   previewFontSize: 16, previewFontFamily: '"Microsoft YaHei", sans-serif', previewWidth: 860,
@@ -132,6 +151,7 @@ export const defaultSettings: Settings = {
   reverseSort: false,
   math: true,
   diagrams: true,
+  markdownExtensions: defaultMarkdownExtensions,
   shortcuts: {},
   externalLinkHosts: [],
   activeWorkspace: "",
@@ -140,8 +160,8 @@ export const defaultSettings: Settings = {
 };
 export function displayError(error: unknown): string {
   if (typeof error === "object" && error && "message" in error)
-    return String(error.message);
-  return typeof error === "string" ? error : "操作未完成，请重试";
+    return t(String(error.message));
+  return typeof error === "string" ? error : t("操作未完成，请重试");
 }
 export function parentPath(path: string): string {
   const index = path.lastIndexOf("/");
@@ -190,6 +210,7 @@ export function relativeLink(from: string, to: string): string {
 export type Dialog = {
   type:
     | "new-file"
+    | "new-todo"
     | "new-folder"
     | "rename"
     | "move"
@@ -199,6 +220,7 @@ export type Dialog = {
     | "settings"
     | "palette"
     | "properties"
+    | "statistics"
     | "about"
     | "conflict";
   workspace?: string;

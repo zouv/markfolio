@@ -7,11 +7,11 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
-    "web:dev": "vite",
-    "web:build": "tsc --noEmit && vite build",
+    "web:dev": "node scripts/sync-assets.mjs && vite",
+    "web:build": "node scripts/sync-menu.mjs && node scripts/sync-assets.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.mjs",
+    "test": "node scripts/sync-menu.mjs && node --import tsx --test tests/*.test.mjs",
     "test:ui": "playwright test --config playwright.config.ts",
     "tauri": "tauri",
     "desktop:dev": "tauri dev",
@@ -33,6 +33,7 @@
     "abcjs": "^6.7.3",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.18",
+    "fountain-js": "^1.2.4",
     "highlight.js": "^11.12.0",
     "katex": "^0.19.1",
     "lucide-react": "^1.75.0",

@@ -123,7 +123,7 @@ pub fn target_path(from: &str, target: &str, wiki: bool, available: &[String]) -
                 .file_stem()
                 .unwrap_or_default()
                 .to_string_lossy();
-            if is_markdown(Path::new(path))
+            if (is_markdown(Path::new(path)) || Path::new(file).extension().is_some())
                 && (name.eq_ignore_ascii_case(&decoded)
                     || path
                         .rsplit('/')
@@ -199,6 +199,116 @@ fn escaped_path(path: &str) -> String {
         .collect::<Vec<_>>()
         .join("/")
 }
+fn link_pattern() -> &'static regex::Regex {
+    static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| regex::Regex::new(r#"(?m)\[\[([^\]\n]+)\]\]|(!?\[[^\]\n]*\]\()(<[^>\n]+>(?:[ \t]+["'][^\n]*["'])?|(?:[^()\n]|\([^()\n]*\))+)(\))|(^ {0,3}\[[^\]\n]+\]:[ \t]*)(<[^>\n]+>|[^\s\n]+)"#).expect("static link pattern"))
+}
+fn protected_ranges(text: &str) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut offset = 0;
+    let mut front = text.starts_with("---\n") || text.starts_with("---\r\n");
+    let mut fence: Option<(u8, usize)> = None;
+    for line in text.split_inclusive('\n') {
+        let trim = line.trim_start();
+        let bytes = trim.as_bytes();
+        let marker = bytes.first().copied().filter(|c| *c == b'`' || *c == b'~');
+        let count = marker.map_or(0, |m| bytes.iter().take_while(|b| **b == m).count());
+        if front {
+            ranges.push((offset, offset + line.len()));
+            if offset > 0 && matches!(trim.trim_end(), "---" | "...") {
+                front = false;
+            }
+        } else if let Some((m, n)) = fence {
+            ranges.push((offset, offset + line.len()));
+            if marker == Some(m) && count >= n && trim[count..].trim().is_empty() {
+                fence = None;
+            }
+        } else if count >= 3 && line.len() - trim.len() < 4 {
+            fence = marker.map(|m| (m, count));
+            ranges.push((offset, offset + line.len()));
+        } else if line.starts_with("    ") || line.starts_with('\t') {
+            ranges.push((offset, offset + line.len()));
+        }
+        offset += line.len();
+    }
+    let bytes = text.as_bytes();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if let Some((_, end)) = ranges.iter().find(|(a, b)| cursor >= *a && cursor < *b) {
+            cursor = *end;
+            continue;
+        }
+        if bytes[cursor] != b'`' || cursor > 0 && bytes[cursor - 1] == b'\\' {
+            cursor += 1;
+            continue;
+        }
+        let start = cursor;
+        let count = bytes[cursor..].iter().take_while(|b| **b == b'`').count();
+        cursor += count;
+        let mut search = cursor;
+        while search < bytes.len() {
+            if bytes[search] != b'`' {
+                search += 1;
+                continue;
+            }
+            let n = bytes[search..].iter().take_while(|b| **b == b'`').count();
+            if n == count {
+                ranges.push((start, search + n));
+                cursor = search + n;
+                break;
+            }
+            search += n;
+        }
+    }
+    ranges
+}
+fn destination(value: &str, wiki: bool) -> (&str, String) {
+    if wiki {
+        return value
+            .split_once('|')
+            .map_or((value, String::new()), |(p, l)| (p, format!("|{l}")));
+    }
+    if value.starts_with('<') {
+        if let Some(end) = value.find('>') {
+            return (&value[1..end], value[end + 1..].into());
+        }
+    }
+    let split = regex::Regex::new(r#"\s+["']"#).expect("static title pattern");
+    split
+        .find(value)
+        .map_or((value.trim(), String::new()), |m| {
+            (&value[..m.start()], value[m.start()..].into())
+        })
+}
+pub fn references(text: &str, from: &str, available: &[String]) -> Vec<String> {
+    let protected = protected_ranges(text);
+    let mut paths = Vec::new();
+    for cap in link_pattern().captures_iter(text) {
+        let position = cap.get(0).map_or(0, |m| m.start());
+        if protected
+            .iter()
+            .any(|(a, b)| position >= *a && position < *b)
+        {
+            continue;
+        }
+        let wiki = cap.get(1).is_some();
+        let value = cap
+            .get(if wiki {
+                1
+            } else if cap.get(3).is_some() {
+                3
+            } else {
+                6
+            })
+            .map_or("", |m| m.as_str());
+        let (target, _) = destination(value, wiki);
+        let resolved = target_path(from, target, wiki, available);
+        if !resolved.path.is_empty() && !paths.contains(&resolved.path) {
+            paths.push(resolved.path);
+        }
+    }
+    paths
+}
 pub fn rewrite(
     text: &str,
     old: &str,
@@ -207,33 +317,8 @@ pub fn rewrite(
     to: &str,
     available: &[String],
 ) -> String {
-    let regex = regex::Regex::new(r"\[\[([^\]\n]+)\]\]|(!?\[[^\]\n]*\]\()(<[^>\n]+>|[^)\n]+)(\))")
-        .expect("static link pattern");
-    let mut protected = Vec::new();
-    let mut offset = 0;
-    let mut fence: Option<char> = None;
-    for line in text.split_inclusive('\n') {
-        let trim = line.trim_start();
-        let marker = if trim.starts_with("```") {
-            Some('`')
-        } else if trim.starts_with("~~~") {
-            Some('~')
-        } else {
-            None
-        };
-        if fence.is_some() || marker.is_some() {
-            protected.push((offset, offset + line.len()));
-        }
-        if let Some(m) = marker {
-            if fence == Some(m) {
-                fence = None;
-            } else if fence.is_none() {
-                fence = Some(m);
-            }
-        }
-        offset += line.len();
-    }
-    regex
+    let protected = protected_ranges(text);
+    link_pattern()
         .replace_all(text, |cap: &regex::Captures<'_>| {
             let whole = cap.get(0).map_or("", |m| m.as_str());
             let position = cap.get(0).map_or(0, |m| m.start());
@@ -244,18 +329,16 @@ pub fn rewrite(
                 return whole.to_owned();
             }
             let wiki = cap.get(1).is_some();
-            let value = cap.get(if wiki { 1 } else { 3 }).map_or("", |m| m.as_str());
-            let (target, suffix) = if wiki {
-                value
-                    .split_once('|')
-                    .map_or((value, String::new()), |(t, l)| (t, format!("|{l}")))
-            } else if value.starts_with('<') {
-                (value.trim_matches(['<', '>']), String::new())
-            } else {
-                value
-                    .split_once(" \"")
-                    .map_or((value, String::new()), |(t, l)| (t, format!(" \"{l}")))
-            };
+            let value = cap
+                .get(if wiki {
+                    1
+                } else if cap.get(3).is_some() {
+                    3
+                } else {
+                    6
+                })
+                .map_or("", |m| m.as_str());
+            let (target, suffix) = destination(value, wiki);
             let resolution = target_path(old, target, wiki, available);
             if resolution.path.is_empty() {
                 return whole.to_owned();
@@ -273,11 +356,15 @@ pub fn rewrite(
             if wiki {
                 format!("[[{link}{fragment}{suffix}]]")
             } else {
-                format!(
-                    "{}{}{fragment}{suffix})",
-                    cap.get(2).map_or("", |m| m.as_str()),
-                    escaped_path(&link)
-                )
+                let prefix = cap.get(2).or_else(|| cap.get(5)).map_or("", |m| m.as_str());
+                let end = if cap.get(4).is_some() { ")" } else { "" };
+                let link = format!("{}{fragment}", escaped_path(&link));
+                let link = if value.starts_with('<') {
+                    format!("<{link}>")
+                } else {
+                    link
+                };
+                format!("{prefix}{link}{suffix}{end}")
             }
         })
         .into_owned()
@@ -287,7 +374,7 @@ pub fn rename(
     id: &str,
     from: &str,
     to: &str,
-    source: &Path,
+    _source: &Path,
     target: &Path,
 ) -> Result<()> {
     let available = paths(library, id)?;
@@ -311,29 +398,43 @@ pub fn rename(
         }
     }
     fs::rename(library.root(id)?.join(checked_relative(from)?), target)?;
-    let mut applied: Vec<(&str, &Document)> = Vec::new();
+    let mut applied: Vec<(&str, &Document, String)> = Vec::new();
     for (_, path, doc, text) in &changes {
         let result = (|| {
             let disk = library.read(id, path)?;
             if disk.version != doc.version {
                 return Err(AppError::new("CONFLICT", "链接更新时文件被外部修改"));
             }
-            library.write(id, path, text, &doc.version, &doc.encoding)?;
-            Ok(())
+            library.write(id, path, text, &doc.version, &doc.encoding)
         })();
-        if let Err(error) = result {
-            for (path, doc) in applied.iter().rev() {
-                if let Ok(file) = library.resolve(id, path, true) {
-                    if let Ok(bytes) = encode(&doc.text, &doc.encoding) {
-                        let _ = atomic_write(&file, &bytes);
+        match result {
+            Ok(updated) => applied.push((path.as_str(), doc, updated.version)),
+            Err(error) => {
+                let mut incomplete = false;
+                for (path, doc, expected) in applied.iter().rev() {
+                    if library
+                        .write(id, path, &doc.text, expected, &doc.encoding)
+                        .is_err()
+                    {
+                        incomplete = true;
                     }
                 }
+                if fs::rename(target, library.root(id)?.join(checked_relative(from)?)).is_err() {
+                    incomplete = true;
+                }
+                library.mark_changed(id, "*");
+                if incomplete {
+                    return Err(AppError::new(
+                        "LINK_ROLLBACK",
+                        "链接更新遇到外部修改，已保留外部内容；请刷新目录并检查相关链接",
+                    ));
+                }
+                return Err(error);
             }
-            let _ = fs::rename(target, source);
-            return Err(error);
         }
-        applied.push((path.as_str(), doc));
     }
+    library.mark_changed(id, from);
+    library.mark_changed(id, to);
     Ok(())
 }
 
