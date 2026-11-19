@@ -1,0 +1,51 @@
+@media print {
+  body {
+    overflow: visible;
+  }
+  .workspace-bar,
+  .sidebar,
+  .file-list,
+  .resize-handle,
+  .document-navigation,
+  .format-toolbar,
+  .document-title,
+  .document-status,
+  .editor-pane,
+  .pane-label,
+  .toast,
+  .modal-backdrop,
+  .plugin-panels,
+  .conflict-banner {
+    display: none !important;
+  }
+  .app-shell,
+  .workspace-content,
+  .document-area,
+  .editing-layout,
+  .editing-panes,
+  .preview-pane,
+  .markdown-preview {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+    width: 100% !important;
+    border: 0 !important;
+    color: #111 !important;
+    background: #fff !important;
+  }
+  .markdown-preview {
+    padding: 0 !important;
+    font-size: 11pt !important;
+  }
+  .markdown-preview pre,
+  .markdown-preview blockquote,
+  .markdown-preview table {
+    break-inside: avoid;
+  }
+  .markdown-preview a {
+    color: #111 !important;
+  }
+  .markdown-preview img {
+    max-width: 100% !important;
+  }
+}

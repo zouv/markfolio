@@ -1,0 +1,8 @@
+{
+  "id": "reading-time",
+  "name": "阅读时间",
+  "version": "1.0.0",
+  "sdkVersion": 1,
+  "description": "展示当前文档预计阅读时间，演示本地插件加载。",
+  "permissions": ["editor", "commands", "views"]
+}

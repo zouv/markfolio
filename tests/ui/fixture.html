@@ -1,0 +1,21 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><title>MarkFolio 测试</title></head><body><div id="root"></div><script type="module">
+import React from 'react';
+import { createRoot } from 'react-dom/client';
+import App from '/src/App.tsx';
+import { useApp } from '/src/store.ts';
+import { defaultSettings } from '/src/types.ts';
+import '/src/styles.css';
+const make = (id, name) => {
+  const paths = ['开始使用.md', '第二篇.md', '第三篇.md'];
+  const documents = Object.fromEntries(paths.map(path => {
+    const text = `# ${path}\n\n${name}的本地文档。\n\n- [ ] 测试任务\n`;
+    return [path, { path, text, savedText: text, version: 'test', encoding: 'utf8', lineEnding: 'lf', dirty: false, saving: false, error: '', revision: 0 }];
+  }));
+  return { info: { id, name, available: true }, folder: '', file: paths[0], expanded: [''],
+    tree: { '': paths.map(path => ({ name: path, path, isDirectory: false, size: 100, modified: Date.now() })) },
+    documents, query: '', hits: [], history: [paths[0]], historyIndex: 0, indexing: false, selected: [paths[0]], selectionAnchor: paths[0], mutating: false };
+};
+useApp.setState({ ready: true, version: 'test', settings: { ...defaultSettings, autoSave: false }, order: ['notes', 'work'], active: 'notes',
+  sessions: { notes: make('notes', '我的笔记'), work: make('work', '工作文档') }, refresh: async () => {}, reindex: async () => {} });
+createRoot(document.getElementById('root')).render(React.createElement(App));
+</script></body></html>
