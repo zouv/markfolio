@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
+import { openSettings } from "./support";
 test.beforeEach(async ({ page }) => {
   page.on("pageerror", error=>console.error("UI runtime:",error.message));
   await page.goto("/tests/ui/fixture.html");
+  await expect(page.getByRole("tablist", { name: "工作目录页签" })).toBeVisible();
 });
 test("Ctrl 多选、Shift 范围选择和工作目录切换保留各自状态", async ({
   page,
@@ -22,13 +24,13 @@ test("Ctrl 多选、Shift 范围选择和工作目录切换保留各自状态", 
 test("设置草稿取消后不生效，应用后保留，关闭再打开读取已应用值", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await openSettings(page);
   let dialog = page.getByRole("dialog", { name: "设置", exact: true });
   await dialog.getByRole("button", { name: "外观", exact: true }).click();
   await dialog.locator('[data-setting="theme"] select').selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await dialog.getByRole("button", { name: "取消", exact: true }).click();
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await openSettings(page);
   dialog = page.getByRole("dialog", { name: "设置", exact: true });
   await dialog.getByRole("button", { name: "外观", exact: true }).click();
   await expect(dialog.locator('[data-setting="theme"] select')).toHaveValue(
@@ -43,7 +45,7 @@ test("设置草稿取消后不生效，应用后保留，关闭再打开读取�
 test("搜索设置可定位选项，快捷键冲突会阻止应用，重置后恢复", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await openSettings(page);
   const dialog = page.getByRole("dialog", { name: "设置", exact: true });
   await dialog.getByRole("textbox", { name: "搜索设置" }).fill("行号");
   await dialog.getByRole("button", { name: /显示行号/ }).click();
@@ -70,7 +72,7 @@ test("搜索设置可定位选项，快捷键冲突会阻止应用，重置后�
 test("自定义快捷键与命令面板一致，旧绑定不再触发对应应用命令", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await openSettings(page);
   const dialog = page.getByRole("dialog", { name: "设置", exact: true });
   await dialog.getByRole("button", { name: "键盘快捷键", exact: true }).click();
   await dialog
@@ -83,7 +85,7 @@ test("自定义快捷键与命令面板一致，旧绑定不再触发对应应�
   await expect(page.getByRole("textbox", { name: "搜索命令" })).toBeVisible();
 });
 test("界面没有横向溢出，设置窗口底部操作始终可见", async ({ page }) => {
-  await page.getByRole("button", { name: "设置", exact: true }).click();
+  await openSettings(page);
   const dialog = page.getByRole("dialog", { name: "设置", exact: true });
   await dialog.getByRole("button", { name: "键盘快捷键", exact: true }).click();
   await expect(

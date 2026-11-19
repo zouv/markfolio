@@ -18,7 +18,7 @@ export default defineConfig({
   webServer: {
     command: `npm run web:dev -- --port ${testUrl.port} --strictPort`,
     url: testUrl.origin,
-    reuseExistingServer: false,
-    timeout: 30000,
+    reuseExistingServer: !process.env.CI,
+    timeout: 180000,
   },
 });

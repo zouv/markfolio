@@ -35,7 +35,7 @@
       {
         "id": "file.print",
         "title": "打印 / 导出 PDF",
-        "shortcut": "Ctrl+P"
+        "shortcut": ""
       },
       {
         "id": "app.closeWindow",
@@ -328,11 +328,6 @@
         "shortcut": ""
       },
       {
-        "id": "view.menu",
-        "title": "显示 / 隐藏菜单栏",
-        "shortcut": ""
-      },
-      {
         "id": "view.zoomIn",
         "title": "放大界面",
         "shortcut": "Ctrl+Equal"
@@ -390,7 +385,7 @@
       {
         "id": "nav.quickOpen",
         "title": "快速打开笔记",
-        "shortcut": "Ctrl+K"
+        "shortcut": "Ctrl+P"
       },
       {
         "id": "focus.preview",
@@ -450,6 +445,11 @@
       {
         "id": "file.external",
         "title": "使用系统程序打开",
+        "shortcut": ""
+      },
+      {
+        "id": "file.closeTab",
+        "title": "关闭当前文档页签",
         "shortcut": ""
       },
       {

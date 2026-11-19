@@ -13,7 +13,7 @@
 - `markfolio-{512,256,128,64,48,32,16}.png`：常用尺寸。
 - `markfolio.ico`：Windows 多尺寸图标，含 16、24、32、48、64、128、256 px 七个 32 位 RGBA PNG 帧；24 px 帧仅内嵌于 ICO。
 - `markfolio.icns`：macOS 图标，含 128、256、512、1024 px PNG 帧。
-- `_build.py`：从 SVG 重新生成全部 PNG / ICO / ICNS，并复制到 `src-tauri/icons/`。
+- `_build.py`：从 SVG 重新生成全部 PNG / ICO / ICNS，复制到 `src-tauri/icons/`，并把 256px 图标安装为 `public/markfolio-icon.png` 供应用内标题栏、欢迎页和关于对话框使用。
 
 ## 配色
 
@@ -34,6 +34,6 @@ python docs/icons/_build.py
 - 脚本用无头 Microsoft Edge 渲染 SVG（2048 × 2048），抠除洋红背景后按目标尺寸独立缩放，不逐级缩图。
 - 需要 Python 3 + Pillow + NumPy，以及本机 Microsoft Edge；找不到 Edge 时用 `MARKFOLIO_EDGE` 指向 `msedge.exe`。
 - headless Edge 的窗口高度会少约 92 px；脚本按 `RENDER + 200` 开窗后裁掉多余部分，避免底部被截断。
-- 生成后会替换 `src-tauri/icons/` 下的 `32x32.png`、`128x128.png`、`128x128@2x.png`、`icon.png`、`icon.ico`、`icon.icns`。
+- 生成后会替换 `src-tauri/icons/` 下的 `32x32.png`、`128x128.png`、`128x128@2x.png`、`icon.png`、`icon.ico`、`icon.icns`，并写入 `public/markfolio-icon.png`。
 - Tauri 只使用上述六个文件名；模板自带的 Windows Store / Android / iOS 图标已移除，需要移动端时用 `npx tauri icon docs/icons/markfolio-1024.png` 重新生成。
 - `.png` / `.ico` / `.icns` 是普通二进制文件（`.gitattributes` 已标记 `binary`），不要改成 Git LFS 指针；提交前确认 `src-tauri/icons/` 与 `docs/icons/` 的输出一致。

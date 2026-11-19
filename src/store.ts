@@ -55,7 +55,9 @@ export type State = {
   initialize(): Promise<void>;
   openWorkspace(): Promise<void>;
   activate(id: string): void;
+  moveWorkspace(id: string, index: number): void;
   closeWorkspace(id: string): Promise<void>;
+  closeDocument(id: string, path: string): Promise<void>;
   refresh(id: string): Promise<void>;
   expand(id: string, directory: string): Promise<void>;
   setFolder(id: string, path: string): void;
@@ -245,6 +247,15 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         if (!get().sessions[id]) return;
         set({ active: id });
         persist();
+      },
+      moveWorkspace(id, index) {
+        if (!get().sessions[id]) return;
+        set((state) => {
+          if (!state.order.includes(id)) return {};
+          const order = state.order.filter((item) => item !== id);
+          order.splice(Math.max(0, Math.min(index, order.length)), 0, id);
+          return { order };
+        });
       },
       async closeWorkspace(id) {
         if(!mainWindow())throw new Error(t("请在主窗口关闭工作目录"));
@@ -488,6 +499,28 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         } finally {
           if (queues.get(key) === task) queues.delete(key);
         }
+      },
+      async closeDocument(id, path) {
+        const session = get().sessions[id];
+        const buffer = session?.documents[path];
+        if (!session || !buffer) return;
+        if (session.mutating) throw new Error(t("正在处理文件，请稍后关闭文档"));
+        if (buffer.saving || buffer.dirty) await get().save(id, path);
+        const latest = get().sessions[id];
+        if (!latest?.documents[path]) return;
+        const paths = Object.keys(latest.documents);
+        const index = paths.indexOf(path);
+        const remaining = paths.filter((item) => item !== path);
+        const next = latest.file === path ? (remaining[index] ?? remaining[index - 1] ?? "") : latest.file;
+        patchSession(id, {
+          documents: Object.fromEntries(
+            Object.entries(latest.documents).filter(([item]) => item !== path),
+          ),
+          file: next,
+          selected: latest.selected.filter((item) => item !== path),
+          selectionAnchor: latest.selectionAnchor === path ? "" : latest.selectionAnchor,
+        });
+        persist();
       },
       async reload(id, path) {
         const doc = normalizeDocument(await api.readDocument(id, path));

@@ -122,7 +122,6 @@ export const settingsCatalog = [
   ["general","trashMode","删除文件去向","垃圾箱 恢复 系统回收站"],
   ["appearance","zoom","界面缩放","放大 缩小"],
   ["appearance","layoutOrder","面板位置","自由调整布局"],
-  ["appearance","menuVisible","显示菜单栏","隐藏 菜单"],
   ["appearance","listStyle","列表样式","摘要 详细列"],
   ["editor","editorMode","编辑器类型","Markdown 富文本"],
   ["editor","keyMode","编辑键位","Vim Emacs"],

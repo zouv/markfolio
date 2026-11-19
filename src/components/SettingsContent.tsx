@@ -1,5 +1,5 @@
 import { t } from "../i18n";
-import { Plus, BookOpen } from "lucide-react";
+import { Plus } from "lucide-react";
 import * as api from "../api";
 import { useApp } from "../store";
 import { displayError, type Settings } from "../types";
@@ -378,14 +378,12 @@ export default function SettingsContent({
       {tab === "about" && (
         <>
           <div className="about-icon">
-            <BookOpen size={34} />
+            <img src="/markfolio-icon.png" alt="" draggable={false} />
           </div>
           <h3>MarkFolio {state.version}</h3>
+          <p className="muted">{t("作者")} @zouv · Tauri + Rust + React</p>
           <p>{t("以本地 Markdown 文件为中心的文档工作台。")}</p>
-          <p className="muted">
-            Tauri + Rust + React
-            <br />
-            {t("工作目录页签 · 实际文件结构 · 插件扩展")}</p>
+          <p className="muted">{t("工作目录页签 · 实际文件结构 · 插件扩展")}</p>
           <p className="muted">
             {t("界面交互参考 Joplin，文件与插件概念参考 Obsidian。独立实现，未捆绑两者应用源码。")}</p>
         </>

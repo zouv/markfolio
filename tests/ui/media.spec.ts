@@ -1,7 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
+import { openSettings } from "./support";
 
 const errors=new WeakMap<Page,string[]>();
-test.beforeEach(async({page})=>{const list:string[]=[];errors.set(page,list);page.on("pageerror",error=>list.push(error.message));await page.goto("/tests/ui/fixture.html");});
+test.beforeEach(async({page})=>{const list:string[]=[];errors.set(page,list);page.on("pageerror",error=>list.push(error.message));await page.goto("/tests/ui/fixture.html");await expect(page.getByRole("tablist",{name:"工作目录页签"})).toBeVisible();});
 test.afterEach(async({page})=>{expect(errors.get(page)).toEqual([]);});
 
 test("HTML 导出独立包含公式字体、wikilink 图片、图表和附件，并保留笔记链接",async({page})=>{
@@ -33,7 +34,7 @@ test("PDF 阅读器渲染本地两页文档，切换页码和缩放后能切换�
 
 test("格式菜单、待办显示选项与 Tab 焦点设置实际作用于编辑器",async({page})=>{
   await page.locator(".cm-content").focus();await page.keyboard.press("Control+b");await expect(page.locator(".cm-content")).toContainText("**加粗文本**");
-  await page.getByRole("button",{name:"设置",exact:true}).click();const dialog=page.getByRole("dialog",{name:"设置",exact:true});
+  await openSettings(page);const dialog=page.getByRole("dialog",{name:"设置",exact:true});
   await dialog.getByRole("button",{name:"编辑器",exact:true}).click();await dialog.locator('[data-setting="tabMovesFocus"] input').check();await dialog.locator('[data-setting="layoutCycle"] select').selectOption("editor-preview");await dialog.getByRole("button",{name:"确定",exact:true}).click();
   await page.locator(".cm-content").focus();await page.keyboard.press("Tab");await expect(page.locator(".cm-content")).not.toBeFocused();
   await page.keyboard.press("Control+l");await expect(page.getByRole("button",{name:"仅编辑",exact:true})).toHaveClass(/active/);await page.keyboard.press("Control+l");await expect(page.getByRole("button",{name:"仅预览",exact:true})).toHaveClass(/active/);

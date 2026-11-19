@@ -9,14 +9,11 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  BookOpen,
   FolderOpen,
   FilePlus2,
   Search,
-  Settings2,
   ChevronRight,
   X,
-  Plus,
   MoreHorizontal,
   FileText,
   Paperclip,
@@ -36,8 +33,6 @@ import {
   Minus,
   RefreshCw,
   Puzzle,
-  Sun,
-  Moon,
   Check,
   Clock3,
   Braces,
@@ -86,6 +81,9 @@ import SettingsDialog from "./components/SettingsDialog";
 import ConflictDialog from "./components/ConflictDialog";
 import DocumentList from "./components/DocumentList";
 import { TagSidebar, PropertiesDialog, StatisticsDialog, QuickOpen, visibleNotes } from "./components/NoteManagement";
+import TitleBar from "./components/TitleBar";
+import FileTabs from "./components/FileTabs";
+import AboutDialog from "./components/AboutDialog";
 import type { Dispose } from "./plugins/sdk";
 
 export default function App() {
@@ -165,7 +163,6 @@ export default function App() {
           ? { checked: state.settings.showSidebar }
           : id === "view.list"
             ? { checked: state.settings.showList }
-            : id === "view.menu" ? {checked:state.settings.menuVisible}
             : id === "view.noteCounts" ? {checked:state.settings.showNoteCounts}
             : id === "view.todoTop" ? {checked:state.settings.uncompletedTodosOnTop}
             : id === "view.completedTodos" ? {checked:state.settings.showCompletedTodos}
@@ -193,6 +190,14 @@ export default function App() {
       useApp.getState().setNotice(displayError(error)),
     );
   }, []);
+  function closeAbout() {
+    setDialog(undefined);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(".app-menu-trigger")?.focus());
+  }
+  function openNoticesFromAbout() {
+    setDialog(undefined);
+    setTool({ type: "notices", workspace: state.active });
+  }
   function showDialog(next: Dialog) {
     setDialog(next);
     setValue(
@@ -343,7 +348,7 @@ export default function App() {
   useEffect(()=>{if(state.ready&&api.isTauriRuntime())void api.externalEditorSessions().then(receiveExternalSessions).catch(()=>{});},[state.ready,state.order]);
   useEffect(()=>{const style=document.createElement("style");style.dataset.markfolioCustom="true";style.textContent=state.settings.customCss;document.head.append(style);return()=>style.remove();},[state.settings.customCss]);
   useEffect(()=>{if(!state.ready||!api.isMainWindow())return;checkReminders();const timer=setInterval(checkReminders,15000);return()=>clearInterval(timer);},[state.ready]);
-  const desktopSignature=JSON.stringify({zoom:state.settings.zoom,menuVisible:state.settings.menuVisible,globalShortcut:state.settings.globalShortcut,tray:state.settings.tray,locale:state.settings.locale});
+  const desktopSignature=JSON.stringify({zoom:state.settings.zoom,menuVisible:false,globalShortcut:state.settings.globalShortcut,tray:state.settings.tray,locale:state.settings.locale});
   useEffect(()=>{if(state.ready&&api.isTauriRuntime())guard(()=>api.desktopPreferences(JSON.parse(desktopSignature)));},[state.ready,desktopSignature,guard]);
   useEffect(()=>{const unlock=(event:Event)=>setTool({type:"lock",...(event as CustomEvent<{workspace:string;path:string}>).detail});window.addEventListener("markfolio-unlock",unlock);return()=>window.removeEventListener("markfolio-unlock",unlock);},[]);
   useEffect(()=>{if(!state.ready)return;const params=new URLSearchParams(location.search);const workspace=params.get("workspace"),note=params.get("note");if(workspace&&note&&useApp.getState().sessions[workspace]){useApp.getState().activate(workspace);guard(()=>useApp.getState().openDocument(workspace,note));}},[state.ready,guard]);
@@ -362,9 +367,11 @@ export default function App() {
       if (dialog?.type === "settings") return;
       if (event.key === "Escape") {
         if (busy) return;
+        const about = dialog?.type === "about";
         setDialog(undefined);
         setQuick(undefined);
         setListMenu(undefined);
+        if (about) requestAnimationFrame(() => document.querySelector<HTMLElement>(".app-menu-trigger")?.focus());
         return;
       }
       if ((event.ctrlKey || event.metaKey) && event.key === "Tab" && !dialog) {
@@ -405,9 +412,7 @@ export default function App() {
         !(event.target as HTMLElement).closest(".tree-scroll,.file-list-scroll")
       )
         return;
-      // Native menu owns core accelerators on desktop; plugins and browser preview use this handler.
-      if (api.isTauriRuntime() && !command.plugin && binding !== "Delete")
-        return;
+      // 自定义标题栏隐藏原生菜单栏，快捷键统一由 WebView 处理，避免原生加速键与命令注册重复触发。
       event.preventDefault();
       event.stopPropagation();
       guard(async () => command.run());
@@ -455,6 +460,12 @@ export default function App() {
           current.setNotice(t("文档已保存"));
         }
         break;
+      case "file.closeTab":
+        if (active?.file) {
+          await current.closeDocument(ws, active.file);
+          editorActions.prune(ws);
+        }
+        break;
       case "file.rename":
         if (active?.file)
           showDialog({ type: "rename", workspace: ws, path: active.file });
@@ -494,7 +505,6 @@ export default function App() {
       case "file.window": if(active?.file){await current.save(ws,active.file);await api.openNoteWindow(ws,active.file);}break;
       case "tools.externalEditor": {const name=await api.selectExternalEditor();if(name)current.setNotice(t("已配置外部编辑器：{0}", name));break;}
       case "file.externalStop": if(active?.file)receiveExternalSessions(await api.externalEdit(ws,active.file,"stop"));break;
-      case "view.menu":current.updateSettings({menuVisible:!current.settings.menuVisible});break;
       case "view.zoomIn":current.updateSettings({zoom:Math.min(200,current.settings.zoom+10)});break;
       case "view.zoomOut":current.updateSettings({zoom:Math.max(50,current.settings.zoom-10)});break;
       case "view.zoomReset":current.updateSettings({zoom:100});break;
@@ -754,83 +764,31 @@ export default function App() {
       command.name.toLowerCase().includes(paletteQuery.toLowerCase()),
   );
   const settings = state.settings;
+  const layoutParts = settings.layoutOrder.split("-");
+  const treeOrder = layoutParts.indexOf("tree") * 2;
+  const listOrder = layoutParts.indexOf("list") * 2;
+  const editorOrder = layoutParts.indexOf("editor") * 2;
+  const mainOrder = settings.showList ? Math.min(listOrder, editorOrder) : editorOrder;
+  async function openWorkspaceAt(index: number) {
+    const before = new Set(useApp.getState().order);
+    await useApp.getState().openWorkspace();
+    const current = useApp.getState();
+    const added = current.order.find((id) => !before.has(id));
+    if (added) current.moveWorkspace(added, index);
+  }
   const run = (id: string) => guard(() => dispatchRef.current(id));
   const format = (before: string, after = "", placeholder = "") =>
     editorActions.insert(state.active, placeholder, before, after);
 
   return (
     <div className="app-shell">
-      <header className="workspace-bar">
-        <div className="brand">
-          <span className="brand-mark">
-            <BookOpen size={22} />
-          </span>
-          <span>
-            Mark<span className="brand-accent">Folio</span>
-          </span>
-        </div>
-        <div
-          className="workspace-tabs"
-          role="tablist"
-          aria-label={t("工作目录页签")}
-        >
-          {state.order.map((id) => (
-            <div
-              key={id}
-              className={`workspace-tab ${state.active === id ? "selected" : ""}`}
-              role="tab"
-              tabIndex={0}
-              aria-selected={state.active === id}
-              onClick={() => state.activate(id)}
-            >
-              <FolderOpen size={14} />
-              <span>{state.sessions[id].info.name}</span>
-              {!state.sessions[id].info.available && (
-                <span className="unavailable">!</span>
-              )}
-              {api.isMainWindow()&&<button
-                aria-label={t("关闭工作目录 {0}", state.sessions[id].info.name)}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  guard(() => state.closeWorkspace(id));
-                }}
-              >
-                <X size={12} />
-              </button>}
-            </div>
-          ))}
-          {api.isMainWindow()&&<IconButton
-            label={t("打开另一个工作目录")}
-            onClick={() => run("workspace.open")}
-          >
-            <Plus size={17} />
-          </IconButton>}
-        </div>
-        <div className="header-actions"><PluginButtons workspace={state.active} kind="menu" />
-          <IconButton label={t("命令面板")} onClick={() => run("app.palette")}>
-            <CommandIcon size={17} />
-          </IconButton>
-          <IconButton
-            label={t("切换主题")}
-            onClick={() =>
-              state.updateSettings({
-                theme: settings.theme === "dark" ? "light" : "dark",
-              })
-            }
-          >
-            {settings.theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
-          </IconButton>
-          <IconButton label={t("设置")} onClick={() => run("app.settings")}>
-            <Settings2 size={17} />
-          </IconButton>
-        </div>
-      </header>
+      <TitleBar run={run} guard={guard} openWorkspaceAt={openWorkspaceAt} />
       {!state.ready ? (
         <div className="loading">{t("正在打开 MarkFolio…")}</div>
       ) : !session ? (
         <main className="welcome">
           <div className="welcome-book">
-            <BookOpen size={54} strokeWidth={1.3} />
+            <img src="/markfolio-icon.png" alt="" draggable={false} />
           </div>
           <span className="eyebrow">YOUR WORDS, YOUR FILES</span>
           <h1>{t("让每一页，井然有序。")}</h1>
@@ -866,7 +824,7 @@ export default function App() {
             <>
               <aside
                 className="sidebar"
-                style={{ width: settings.sidebarWidth,order:settings.layoutOrder.split("-").indexOf("tree")*2 }}
+                style={{ width: settings.sidebarWidth,order:treeOrder }}
               >
                 <FileTree session={session} action={showDialog} /><TagSidebar session={session} />
                 <div className="sidebar-footer">
@@ -882,13 +840,16 @@ export default function App() {
               </aside>
               <div
                 className="resize-handle"
-                style={{order:settings.layoutOrder.split("-").indexOf("tree")*2+1}}
+                style={{order:treeOrder+1}}
                 onPointerDown={(event) => resize(event, "sidebarWidth")}
               />
             </>
           )}
-          {settings.showList && (<><DocumentList session={session} query={query} setQuery={setQuery} searchRef={searchRef} run={run} /><div className="resize-handle" style={{order:settings.layoutOrder.split("-").indexOf("list")*2+1}} onPointerDown={event=>resize(event,"listWidth")} /></>)}
-          <section className="document-area" style={{order:settings.layoutOrder.split("-").indexOf("editor")*2}}>
+          <div className="workspace-main" style={{order: mainOrder}}>
+            <FileTabs run={run} guard={guard} />
+            <div className="workspace-columns">
+              {settings.showList && (<><DocumentList session={session} query={query} setQuery={setQuery} searchRef={searchRef} run={run} /><div className="resize-handle" style={{order:1}} onPointerDown={event=>resize(event,"listWidth")} /></>)}
+              <section className="document-area" style={{order: editorOrder}}>
             <div className="document-navigation">
               <div>
                 <IconButton
@@ -1142,7 +1103,7 @@ export default function App() {
               </>
             ) : (
               <div className="no-document">
-                <BookOpen size={46} strokeWidth={1} />
+                <img className="no-document-icon" src="/markfolio-icon.png" alt="" draggable={false} />
                 <h2>{t("选择一篇笔记")}</h2>
                 <p>{t("在文件树中打开文档，或创建新的 Markdown 笔记。")}</p>
                 <button className="primary" onClick={() => run("file.new")}>
@@ -1151,6 +1112,8 @@ export default function App() {
               </div>
             )}
           </section>
+            </div>
+          </div>
         </main>
       )}
       {state.notice && (
@@ -1194,8 +1157,9 @@ export default function App() {
           </div>
         </>
       )}
-      {quick && session && <div className="modal-backdrop"><section className="modal palette-modal" role="dialog" aria-modal="true" aria-label={t("快速打开")}><button className="modal-close" onClick={()=>setQuick(undefined)}><X size={18}/></button><QuickOpen workspace={state.active} insertLink={quick==="link"} close={()=>setQuick(undefined)} /></section></div>}
+      {quick && session && <div className="modal-backdrop"><section className="modal palette-modal quick-open-modal" role="dialog" aria-modal="true" aria-label={quick==="link"?t("选择笔记链接"):t("快速搜索")}><button className="modal-close" onClick={()=>setQuick(undefined)}><X size={18}/></button><QuickOpen workspace={state.active} insertLink={quick==="link"} close={()=>setQuick(undefined)} /></section></div>}
       <PluginDialogs/>
+      {dialog?.type === "about" && <AboutDialog close={closeAbout} openNotices={openNoticesFromAbout} />}
       {tool&&<ToolWindow target={tool} close={()=>setTool(undefined)}/>}
       {dialog?.type === "settings" && (
         <div className="modal-backdrop">
@@ -1205,7 +1169,7 @@ export default function App() {
           />
         </div>
       )}
-      {dialog && dialog.type !== "settings" && (
+      {dialog && dialog.type !== "settings" && dialog.type !== "about" && (
         <div
           className="modal-backdrop"
           onMouseDown={(event) => {
@@ -1278,19 +1242,6 @@ export default function App() {
               <PropertiesDialog workspace={dialog.workspace ?? state.active} path={dialog.path ?? ""} close={()=>setDialog(undefined)} />
             ) : dialog.type === "statistics" ? (
               <StatisticsDialog text={state.sessions[dialog.workspace??state.active]?.documents[dialog.path??""]?.text??""}/>
-            ) : dialog.type === "about" ? (
-              <>
-                <div className="about-icon">
-                  <BookOpen size={34} />
-                </div>
-                <h2>MarkFolio</h2>
-                <p>{t("本地 Markdown 文档管理工具")}</p>
-                <p className="muted">
-                  {t("版本")}{state.version || "…"} · Tauri + Rust + React
-                </p>
-                <p>{t("文档属于你。工作目录各自独立，插件按需扩展。")}</p>
-                <button className="secondary" onClick={()=>{setDialog(undefined);setTool({type:"notices",workspace:state.active});}}>{t("第三方许可证与资源")}</button>
-              </>
             ) : dialog.type === "conflict" ? (
               <ConflictDialog
                 workspace={dialog.workspace ?? ""}

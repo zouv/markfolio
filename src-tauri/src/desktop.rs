@@ -219,6 +219,7 @@ pub fn note_window(
     .title("MarkFolio · 笔记")
     .inner_size(1100.0, 800.0)
     .min_inner_size(700.0, 500.0)
+    .decorations(false)
     .build()
     .map_err(|_| AppError::new("WINDOW", "无法创建笔记窗口"))?;
     Ok(())

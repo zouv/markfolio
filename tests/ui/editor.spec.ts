@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
+import { openSettings } from "./support";
 
-test.beforeEach(async ({page})=>{await page.goto("/tests/ui/fixture.html");});
+test.beforeEach(async ({page})=>{await page.goto("/tests/ui/fixture.html");await expect(page.getByRole("tablist",{name:"工作目录页签"})).toBeVisible();});
 test("富文本编辑保留特殊源码，撤销和查找替换修改同一份 Markdown",async({page})=>{
   const original="---\ncustom: [1, 2]\n---\n# Title\n\nPlain paragraph.\n\n```md\n[[preserve-code]]\n```\n\n$$x^2$$\n";
   await page.evaluate(async text=>{const path="/src/store.ts";const {useApp}=await import(path);const state=useApp.getState();state.edit("notes",state.sessions.notes.file,text);state.updateSettings({editorMode:"rich",mode:"editor"});},original);
@@ -33,14 +34,14 @@ test("HTML 粘贴转换为 Markdown，脚本与事件处理器被移除",async({
   expect(result.text).toContain("**Safe paste**");expect(result.text).not.toContain("<script>");expect(result.text).not.toContain("onerror=");expect(result.bad).toBeUndefined();
 });
 test("切换语言保留用户文档内容，并翻译设置及选择提示",async({page})=>{
-  await page.getByRole("button",{name:"设置",exact:true}).click();const dialog=page.getByRole("dialog",{name:"设置",exact:true});
+  await openSettings(page);const dialog=page.getByRole("dialog",{name:"设置",exact:true});
   await dialog.locator('[data-setting="locale"] select').selectOption("en");await dialog.getByRole("button",{name:"确定",exact:true}).click();
   await expect(page.locator("html")).toHaveAttribute("lang","en");await expect(page.getByText("1 items selected",{exact:true})).toBeVisible();
   await expect(page.getByRole("tab",{name:/我的笔记/})).toBeVisible();await expect(page.locator(".cm-content")).toContainText("我的笔记的本地文档");
-  await page.getByRole("button",{name:"Settings",exact:true}).click();await expect(page.getByRole("dialog",{name:"Settings",exact:true})).toBeVisible();
+  await openSettings(page, true);
 });
 test("白板关闭时保留未保存修改，确认后才关闭",async({page})=>{
-  await page.getByRole("button",{name:"命令面板",exact:true}).click();await page.getByRole("textbox",{name:"搜索命令"}).fill("白板");await page.locator(".palette-results button").filter({hasText:"白板"}).first().click();
+  await page.keyboard.press("Control+Shift+P");await page.getByRole("textbox",{name:"搜索命令"}).fill("白板");await page.locator(".palette-results button").filter({hasText:"白板"}).first().click();
   const canvas=page.locator(".whiteboard-canvas");await canvas.click({position:{x:100,y:100}});
   const reject=(dialog:import("@playwright/test").Dialog)=>void dialog.dismiss();page.once("dialog",reject);
   await page.getByRole("button",{name:"关闭工具"}).click();await expect(canvas).toBeVisible();
@@ -110,7 +111,7 @@ test("源码表格菜单在当前单元格添加列，撤销恢复表格和外�
   const original="# Before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nAfter unchanged.\n";
   await page.evaluate(async text=>{const store="/src/store.ts",editor="/src/Editor.tsx";const {useApp}=await import(store),{editorActions}=await import(editor);const state=useApp.getState();editorActions.replaceDocument("notes",state.sessions.notes.file,text);state.updateSettings({mode:"split",editorMode:"markdown"});},original);
   await page.locator(".cm-content").click();await page.keyboard.press("Control+Home");await page.keyboard.press("ArrowDown");await page.keyboard.press("ArrowDown");await page.keyboard.press("ArrowDown");await page.keyboard.press("ArrowDown");await page.keyboard.press("ArrowRight");
-  await page.getByRole("button",{name:"命令面板",exact:true}).click();await page.getByRole("textbox",{name:"搜索命令"}).fill("添加表格列");await page.locator(".palette-results button").filter({hasText:"添加表格列"}).click();
+  await page.keyboard.press("Control+Shift+P");await page.getByRole("textbox",{name:"搜索命令"}).fill("添加表格列");await page.locator(".palette-results button").filter({hasText:"添加表格列"}).click();
   await expect(page.locator(".preview-pane table tr").first().locator("th")).toHaveCount(3);
   await page.locator(".cm-content").press("Control+z");
   await expect(page.locator(".preview-pane table tr").first().locator("th")).toHaveCount(2);

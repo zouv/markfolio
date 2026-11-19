@@ -8,8 +8,9 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 
 | 任务 | 必读 | 可忽略 | 入口 |
 |---|---|---|---|
-| 主布局、菜单、文件操作 | src/App.tsx、src/commands.ts、src/components/ | 打包 | §2.1 |
+| 主布局、标题栏、页签、文件操作 | src/App.tsx、src/components/TitleBar.tsx、FileTabs.tsx、src/commands.ts | 打包 | §2.1 |
 | 编辑、保存、会话 | src/Editor.tsx、src/store.ts、src/types.ts | 插件安装 | §2.1、§3 |
+| 快速搜索、文件页签 | src/components/NoteManagement.tsx、FileTabs.tsx、src/store.ts | 打包 | §2.1、§3 |
 | Markdown 预览与链接 | src/Preview.tsx、src/markdown.ts | 打包 | §2.1 |
 | 文件、搜索、监听、IPC | library/files/index/links/crypto.rs、commands.rs、src/api.ts、tests/ | CSS | §2.2、§4 |
 | 导入导出、桌面、本地服务 | transfer/desktop/native_menu/external/ai/api_server.rs、对应 components | 编辑内核 | §2.2 |
@@ -21,6 +22,9 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 | 位置 | 职责 |
 |---|---|
 | src/main.tsx、App.tsx | React 挂载、主布局、对话框调度、自动保存、原生事件 |
+| src/components/TitleBar.tsx | 自绘标题栏：应用菜单、工作目录页签排序/关闭、窗口命令与缩放手柄 |
+| src/components/FileTabs.tsx | 列表+编辑器顶部的文档页签栏：切换、关闭、右键菜单与未打开状态 |
+| src/components/AboutDialog.tsx | 关于对话框：应用图标、名称、版本、说明、焦点循环与关闭路径 |
 | src/commands.ts、shortcuts.ts | 稳定核心命令 ID、快捷键规范化与冲突校验 |
 | src/fileOperations.ts、settings.ts | 批量文件操作与变更摘要、设置草稿差量合并和搜索目录 |
 | src/components/ | 文件树、设置、冲突比较、按钮及插件面板 |
@@ -30,17 +34,17 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 | src/api.ts | 所有 IPC 的唯一 TypeScript 封装 |
 | src/plugins/sdk.ts、runtime.ts、isolated.ts、public/plugin-frame.* | SDK 1/2、工作区实例、默认隔离 Worker/iframe 与显式可信 ESM、生命周期 |
 | src/metadata.ts、conversion.ts、RichEditor.tsx、editorWidgets.ts | Front Matter 保留式修改、HTML 转换、分块富文本、就地图片/公式 |
-| src/components/NoteManagement、DocumentList、Media、TransferDialog | 属性/标签/快速打开、列表、附件/垃圾箱、导入导出 |
+| src/components/NoteManagement、DocumentList、Media、TransferDialog | 属性/标签/跨目录快速搜索、列表、附件/垃圾箱、导入导出 |
 | src/components/AdvancedSettings、DesktopTools、Integrations、OcrDialog、Whiteboard | 高级设置、更新/锁定、AI/API、离线 OCR、画板 |
 | src-tauri/src/library.rs | 工作区授权根、文件编码、冲突检测、索引、插件安装、设置 |
-| src-tauri/src/commands.rs、lib.rs | 异步 IPC、原生对话框、命令注册、菜单 |
-| src-tauri/src/menu_state.rs | 原生菜单可用/勾选状态与快捷键更新 |
+| src-tauri/src/commands.rs、lib.rs | 异步 IPC、原生对话框、命令注册、窗口与菜单 |
+| src-tauri/src/menu_state.rs | 隐藏原生菜单的可用/勾选状态与快捷键更新 |
 | src-tauri/src/files/index/links/crypto.rs | 附件/垃圾箱、可重建索引、链接维护、本地加密 |
 | src-tauri/src/transfer/plugin_service.rs | 格式转换、插件安装/仓库与文件权限校验 |
 | src-tauri/src/desktop/native_menu/external/ai/api_server.rs | 托盘/窗口/更新、菜单、外部编辑、凭据与 AI、本地认证服务 |
 | tests/、src-tauri/tests/ | 契约、保存队列、插件清理、真实文件测试 |
 | src/styles.css、print.css | 主题、布局、打印 |
-| docs/icons/、src-tauri/icons/ | 图标矢量源、生成脚本与各平台生成图标 |
+| docs/icons/、public/markfolio-icon.png、src-tauri/icons/ | 图标矢量源、生成脚本、应用内图标与各平台生成图标 |
 | manager.sh、scripts/、*.bat | 模板运行、检查、事务打包入口 |
 | docs/、根文档、.claude/ | 使用说明、AI 协作规则、计划与接力状态 |
 
@@ -50,10 +54,14 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 
 | 改什么 | 入口 |
 |---|---|
-| 菜单与工具栏行为 | App 的 dispatchRef.current、menuSignature；coreCommands；lib.rs::menu、menu_state::update |
+| 菜单与工具栏行为 | TitleBar 的应用菜单/窗口命令；App 的 dispatchRef.current、menuSignature；coreCommands；menu_state::update |
+| 工作目录页签 | TitleBar：order/active、closeWorkspace、moveWorkspace、右键菜单；+ 调用 openWorkspace 后插入到右侧 |
+| 文档页签 | FileTabs：session.documents 为页签集合、session.file 为活动项；store::closeDocument；editorActions.prune |
+| 快速搜索 | NoteManagement::QuickOpen、App 的 nav.quickOpen；跨工作目录 catalog/树回退、实时过滤与高亮 |
+| 关于对话框 | AboutDialog；应用菜单 app.about 打开，closeAbout 恢复焦点；第三方资源入口打开独立 ToolWindow |
 | 新建、移动、删除、复制、多选 | App::submitEntry、FileTree；fileOperations::operateFiles/moveEntry；store::selectFiles |
-| 自定义快捷键 | shortcuts::normalizeShortcut/validateShortcuts/effectiveShortcut；SettingsContent 的 keymap；App 的 keyboard |
-| 保存、目录状态 | createAppStore 的 save、refresh、openDocument、closeWorkspace、persistSettings；flushDocuments |
+| 自定义快捷键 | shortcuts::normalizeShortcut/validateShortcuts/effectiveShortcut；SettingsContent 的 keymap；App 的 keyboard（WebView 统一处理） |
+| 保存、目录状态 | createAppStore 的 save、refresh、openDocument、closeWorkspace、closeDocument、moveWorkspace、persistSettings；flushDocuments |
 | 文本编辑与撤销 | Editor、editorActions；状态缓存键为工作区 ID + 相对路径；capture/insertCaptured 保存并映射原选区，失败返回 false |
 | 富文本、表格、独立排序 | RichEditor、richSelection::sourceBoundary、tableEditing::editTable；settings::noteSortFor/noteSortPatch |
 | Markdown 渲染 | createRenderer、prepareMarkdown、createTOC、toggleTask；Preview |
@@ -64,7 +72,7 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 
 Library::open/resolve/list/read/write/create/rename/delete/duplicate 是文件入口；reindex/search 管理检索；attach 管理 notify 监听；plugins/install_plugin 管理插件文件；external_link 校验 HTTPS 与允许的网站。
 
-commands::access 将阻塞文件操作移入 spawn_blocking，再锁定 SharedLibrary。commands.rs 不写界面逻辑；native_menu 从 scripts/sync-menu.mjs 生成的 menu.json 建原生菜单。文件模块实现通过 Library，保持授权与版本校验。
+commands::access 将阻塞文件操作移入 spawn_blocking，再锁定 SharedLibrary。commands.rs 不写界面逻辑；native_menu 从 scripts/sync-menu.mjs 生成的 menu.json 建隐藏原生菜单（不注册加速键），可见的应用菜单由 TitleBar 渲染。文件模块实现通过 Library，保持授权与版本校验。
 
 ### 2.3 插件
 
@@ -77,7 +85,10 @@ contextFor 绑定实例工作区；synchronizePlugins 对照启用状态，创�
 - 外部修改：notify 发送工作区 ID → 防抖 refresh → 未修改缓冲刷新；有修改缓冲保留内容并标记冲突。用户比较后选择磁盘内容或用当前磁盘版本保存自己的内容。
 - 批量操作：压缩祖先/子项重复选择 → 锁定源工作区的编辑与关闭 → 移动/复制先保存受影响缓冲，删除拒绝未保存项 → 逐项操作并报告部分失败 → 更新原工作区缓冲路径/选择/导航 → 刷新列表与索引。复制使用 create_new，保留原字节且不覆盖同名目标。
 - 设置：打开时复制基线与草稿 → 搜索定位/快捷键校验 → 按实际编辑字段合并当前设置 → 串行写盘成功后应用；失败保留原状态。插件数据按字段合并，保留后台会话/插件变化；取消丢弃未应用草稿，插件安装独立立即执行。
-- 菜单与快捷键：核心注册保留 coreCommands ID，插件命令带工作区命名空间 → 同一 overrides 用于菜单/命令面板/键盘 → 串行 update_menu 更新可用和勾选状态、先清旧绑定再设新绑定。桌面核心组合键由原生菜单触发，插件/浏览器由页面处理；单独 Delete 仅作用于文件列表/树。
+- 菜单与快捷键：核心注册保留 coreCommands ID，插件命令带工作区命名空间 → 同一 overrides 用于应用菜单/命令面板/键盘 → 串行 update_menu 更新可用和勾选状态、先清旧绑定再设新绑定。自定义标题栏隐藏原生菜单，快捷键由 WebView 键盘处理器统一执行；原生菜单加速键关闭，避免同键触发两次；单独 Delete 仅作用于文件列表/树。
+- 标题栏与窗口：主窗口 decorations=false → TitleBar 使用 data-tauri-drag-region 拖动/双击最大化 → 自绘最小化/最大化/关闭调用 window API → 边缘手柄 startResizeDragging；关闭仍进入 onCloseRequested 的保存/托盘/退出流程。
+- 工作目录/文件页签：工作目录页签绑定 state.order/active，拖动经 moveWorkspace 重排；文件页签来自 session.documents，点击 openDocument，关闭先保存再删除缓冲并由 editorActions.prune 清理编辑器缓存。
+- 快速搜索：Ctrl+P → QuickOpen 合并各工作目录 catalog（空索引回退文件树）→ 标题/路径/别名/标签模糊评分与高亮 → Enter 激活所属工作目录并打开笔记，#标题 跳转。
 - 检索：扫描或文件事件 → 按 mtime 纳秒与大小跳过未变文件 → SQLite 事务更新 catalog → 字段/排除/OR/短语/通配/日期筛选和评分。索引可删除重建；不缓存加密正文。
 - 插件：安装清单/入口/样式 → 默认停用 → 各工作区启用 → 命令/设置/面板/编辑扩展注册 → 停用或关闭时清理。所有异步写入带原工作区 ID。
 - 导出：exportHtml 净化与渲染 → 内嵌本地附件/字体/图表/乐谱/剧本 → 保留选中笔记的 HTML/PDF 链接，不嵌入未选正文 → Rust 校验目标与写盘。transfer.rs 使用 htmd 转换 HTML/ENEX/OneNote。
@@ -107,7 +118,8 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 - scripts/sync-assets.mjs 从锁定包同步 OCR/PDF/公式字体，再调用 third-party.mjs 收集许可/署名和 MPL/EPL 组件包源码。public/third-party 为生成资源；许可证缺失阻止构建。
 - scripts/package.mjs 在 Release/Debug 包中复制文档、插件示例、剪藏、第三方目录，并分别建立 unpack-manifest.json；安装器的 bundle.resources 带相同资源。
 - 运行时测试目录、日志及界面检查样本在被忽略的 .runtime；不捆绑真实用户文件。
-- tests/ui 与 playwright.config.ts 使用独立无头 Chrome 检查合成 React 交互，结果在 .runtime/ui-results；不验证真实文件 IPC 或原生菜单加速键。
+- 主窗口 `decorations=false`（笔记窗口同样自绘），TitleBar 负责拖动、最大化/还原、最小化、关闭与边缘缩放；capabilities 只额外开放这些窗口命令权限。原生菜单仍挂载但隐藏，且不注册加速键。
+- tests/ui 与 playwright.config.ts 使用独立无头 Chrome 检查合成 React 交互，结果在 .runtime/ui-results；覆盖标题栏、文件页签、Ctrl+P、关于对话框与既有编辑器/插件流程，不验证真实文件 IPC 或原生窗口拖动。
 
 ## 7. 长期约束与已知局限
 
@@ -123,6 +135,9 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 - 搜索重建持有服务锁，极大目录的首次扫描可能需要等待；索引/已保存缓冲可限量。隔离 CSP/实际权限及生命周期由界面和 Rust 验证；可信模式仍拥有同页面完整能力。
 - 富文本仅规范化修改的块，特殊语法保留原源码；选区映射使用语法范围，扩展开关与行内代码决定是否隐藏标记。Fountain 预览/导出共用 fountain-js。
 - 图标由 docs/icons/_build.py 从 markfolio.svg 生成：无头 Edge 按 2048 渲染、洋红抠图后独立缩放；headless Edge 窗口高度比 `--window-size` 少约 92 px，脚本多开窗后再裁剪，避免底部截断。改图标后重跑脚本并核对 src-tauri/icons 与 docs/icons 输出一致。
+- 自定义标题栏下不要把快捷键交回原生菜单：WebView2 会先消费 Ctrl+P 等浏览器快捷键，且原生菜单加速键已关闭；核心命令统一走 App 的 keyboard 处理器，避免重复或漏触发。
+- 标题栏空白区用 data-tauri-drag-region="deep"；按钮、role=tab、菜单和窗口缩放手柄必须保持可交互或显式标记 data-tauri-drag-region="false"，否则会误触窗口拖动。
+- 文件页签栏放在 list+editor 的 workspace-main 内，默认位于第 2+3 栏顶部；layoutOrder 仍控制 list/editor 顺序，关闭页签前先保存，避免静默丢失未保存内容。
 - 独立实现，未复制 Joplin/Obsidian 核心；源码插件移植需按各许可证审查。
 
 <!-- vibe-coding-starter 2026-11-11.1 · 文档体系版本标记 -->

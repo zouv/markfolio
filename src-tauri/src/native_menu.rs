@@ -9,7 +9,6 @@ struct Group {
 struct Item {
     id: String,
     title: String,
-    shortcut: String,
 }
 pub fn translate(message: &str, locale: &str) -> String {
     if locale != "en" {
@@ -33,15 +32,12 @@ pub fn create(app: &AppHandle, locale: &str) -> tauri::Result<tauri::menu::Menu<
     for group in groups {
         let mut submenu = SubmenuBuilder::new(app, translate(&group.name, locale));
         for command in group.commands {
-            let shortcut = if command.shortcut.is_empty() || command.shortcut == "Delete" {
-                None
-            } else {
-                Some(command.shortcut.replace("Ctrl", "CmdOrCtrl"))
-            };
+            // 自定义标题栏下快捷键由 WebView 命令系统统一处理；原生菜单只保留命令项，
+            // 不再注册加速键，避免同一按键触发两次。
+            let shortcut: Option<&str> = None;
             if [
                 "view.sidebar",
                 "view.list",
-                "view.menu",
                 "view.noteCounts",
                 "view.todoTop",
                 "view.completedTodos",
@@ -65,7 +61,7 @@ pub fn create(app: &AppHandle, locale: &str) -> tauri::Result<tauri::menu::Menu<
                     translate(&command.title, locale),
                     true,
                     true,
-                    shortcut.as_deref(),
+                    shortcut,
                 )?);
             } else {
                 submenu = submenu.item(&MenuItem::with_id(
@@ -73,7 +69,7 @@ pub fn create(app: &AppHandle, locale: &str) -> tauri::Result<tauri::menu::Menu<
                     &command.id,
                     translate(&command.title, locale),
                     true,
-                    shortcut.as_deref(),
+                    shortcut,
                 )?);
             }
         }

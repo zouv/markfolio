@@ -144,7 +144,7 @@ export const defaultSettings: Settings = {
   spellcheck: false, inlineWidgets: false, htmlPaste: true,
   previewFontSize: 16, previewFontFamily: '"Microsoft YaHei", sans-serif', previewWidth: 860,
   customCss: "", rawHtml: true, remoteImages: false, zoom: 100,
-  layoutOrder: "tree-list-editor", menuVisible: true, locale: "zh-CN",
+  layoutOrder: "tree-list-editor", menuVisible: false, locale: "zh-CN",
   indexMaxMb: 512, bufferLimit: 24, updateLinks: true, trashMode: "app",
   safeMode: false, tray: true, minimizeToTray: false, globalShortcut: "Ctrl+Alt+M",
   updateUrl: "", pluginRepositories: [],

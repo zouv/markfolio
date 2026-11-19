@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "markfolio 主窗口的最小权限集：默认只有 Tauri core 权限",
+  "description": "markfolio 主窗口的最小权限集：core 权限 + 自绘标题栏所需的窗口命令",
   "windows": [
     "main",
     "note-*"
@@ -9,6 +9,10 @@
   "permissions": [
     "core:default",
     "core:window:allow-close",
-    "core:window:allow-hide"
+    "core:window:allow-hide",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging"
   ]
 }

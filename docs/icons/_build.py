@@ -30,6 +30,7 @@ ROOT = HERE.parent.parent
 SVG = HERE / "markfolio.svg"
 PREFIX = "markfolio"
 APP_ICONS = ROOT / "src-tauri" / "icons"
+PUBLIC_ICON = ROOT / "public" / "markfolio-icon.png"
 
 RENDER = 2048   # 4x the 512 viewBox
 WINDOW_EXTRA = 200  # Edge headless=new reserves window chrome height; render taller, then crop
@@ -154,7 +155,10 @@ svg{{display:block;width:{RENDER}px;height:{RENDER}px;background:#ff00ff}}
         (icns_path, "icon.icns"),
     ):
         shutil.copyfile(source, APP_ICONS / target)
+    PUBLIC_ICON.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(HERE / f"{PREFIX}-256.png", PUBLIC_ICON)
     print(f"Installed Tauri icons: {APP_ICONS}")
+    print(f"Installed in-app icon: {PUBLIC_ICON}")
 
     for path in (html_path, raw_path):
         if path.exists():

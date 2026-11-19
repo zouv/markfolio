@@ -72,7 +72,7 @@
 - **版本号唯一出处 `src-tauri/Cargo.toml` 的 `version`**：`tauri.conf.json` 不写 `version`（省略时回退到 Cargo.toml）；前端经 `app_info` 命令读取；`package.json` 的 `version` 固定 `0.0.0` 且不使用。发版只改 Cargo.toml。
 - **App 标识唯一出处 `src-tauri/tauri.conf.json` 的 `identifier`**（`init.sh` 写入 `dev.<项目名>.app`，可用 `--set TAURI_IDENTIFIER=...` 覆盖）：它决定安装标识与用户数据目录，发布后不可改。
 - **IPC 契约三方一致**：Rust `#[tauri::command]` + `lib.rs` 的 `generate_handler!` + `src/api.ts` 的 `invoke` 封装；新增命令时三处一起改，并让 `tests/contract.test.mjs` 通过。命令名 / 参数 / 返回类型都是契约，不要动态拼命令名。
-- **能力最小化**：`src-tauri/capabilities/default.json` 只给用到的权限，默认只有 `core:default`。新增插件权限前先说明为什么现有命令做不到。
+- **能力最小化**：`src-tauri/capabilities/default.json` 只给用到的权限，默认只有 `core:default`，自绘标题栏只额外开放最小窗口命令权限。新增插件权限前先说明为什么现有命令做不到。
 - **CSP 生产收紧**：`tauri.conf.json` 的 `app.security.csp` 不允许 `unsafe-eval`，`script-src` 不加 `unsafe-inline`；`devCsp` 只服务 Vite 热更新，不要把开发放宽项复制进 `csp`。
 - **前端开发**：`sh manager.sh web` 只在浏览器预览界面（IPC 不可用）；完整开发用 `sh manager.sh dev`。Vite 端口只在 `tauri.conf.json` 的 `build.devUrl` 定义，`vite.config.ts` 从中读取，不要另写一份。
 - 依赖：前端 lock 文件（`package-lock.json` / `pnpm-lock.yaml` / `yarn.lock`）入库，脚本按 `npm` 用 ci/frozen install；Rust 依赖在 `src-tauri/Cargo.toml`，首次构建生成的 `src-tauri/Cargo.lock` 入库。仅添加已授权功能所需依赖，并记录用途；常规实现依赖无需重复确认。
@@ -83,7 +83,7 @@
 
 ## 3. 安全 / 数据约束（违反即 bug）
 
-- **能力最小化（capabilities）**：只声明实际用到的权限，默认仅 `core:default`。不要为了省事加 `shell:allow-execute` / `fs:allow-*` 通配；新增权限 = 新增攻击面，先确认现有 Rust 命令做不到。不要开启 `dangerousDisableAssetCspModification`、`dangerousRemoteDomainIpcAccess` 之类的危险开关。
+- **能力最小化（capabilities）**：只声明实际用到的权限，默认仅 `core:default`（自绘标题栏只额外声明窗口命令权限）。不要为了省事加 `shell:allow-execute` / `fs:allow-*` 通配；新增权限 = 新增攻击面，先确认现有 Rust 命令做不到。不要开启 `dangerousDisableAssetCspModification`、`dangerousRemoteDomainIpcAccess` 之类的危险开关。
 - **IPC 输入不可信**：所有命令参数都要校验（类型、长度、枚举、路径）；文件 / 目录访问先规范化（拒绝 `..`、绝对路径逃逸、符号链接越界），并限制在用户明确选择的根内；不要给网页任意路径读写能力，也不要把授权根的绝对路径回传给网页。
 - **不要用 shell / 字符串拼接执行用户输入**：需要跑外部程序时用固定可执行文件 + 参数数组 + 白名单，不接受任意命令字符串。
 - **CSP 不可放宽成 `unsafe-eval`**：生产 `csp` 的 `script-src` 不加 `unsafe-inline`（`style-src` 的 inline 仅为 React 样式属性保留）。`devCsp` 的放宽只允许出现在开发配置。
