@@ -58,7 +58,7 @@ export const coreCommands = [
   ["app.plugins", "插件管理", ""],
   ["app.palette", "命令面板", "Ctrl+Shift+P"],
   ["app.about", "关于 MarkFolio", ""],
-  ["app.quit", "退出", "Ctrl+Q"],
+  ["app.quit", "退出", ""],
   ["nav.quickOpen", "快速打开笔记", "Ctrl+P"],
   ["file.chooseLink", "选择笔记链接", "Ctrl+Alt+L"],
   ["file.copyLink", "复制笔记链接", ""],

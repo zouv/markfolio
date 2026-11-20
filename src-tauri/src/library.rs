@@ -137,8 +137,21 @@ pub struct WorkspaceInfo {
     pub name: String,
     pub available: bool,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentWorkspace {
+    pub id: String,
+    pub name: String,
+    pub available: bool,
+}
 #[derive(Clone, Serialize, Deserialize)]
 struct WorkspaceRecord {
+    id: String,
+    name: String,
+    root: PathBuf,
+}
+#[derive(Clone, Serialize, Deserialize)]
+struct RecentRecord {
     id: String,
     name: String,
     root: PathBuf,
@@ -146,6 +159,8 @@ struct WorkspaceRecord {
 #[derive(Default, Serialize, Deserialize)]
 struct Persisted {
     workspaces: Vec<WorkspaceRecord>,
+    #[serde(default)]
+    recent: Vec<RecentRecord>,
     settings: serde_json::Value,
 }
 #[derive(Serialize)]
@@ -323,12 +338,25 @@ impl Library {
     pub fn new(data_dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(data_dir.join("indexes"))?;
         let settings_file = data_dir.join("state.json");
-        let persisted = match fs::read(&settings_file) {
+        let mut persisted: Persisted = match fs::read(&settings_file) {
             Ok(bytes) => serde_json::from_slice(&bytes)
                 .map_err(|_| AppError::new("CONFIG", "应用设置文件损坏，请保留该文件后重置设置"))?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Persisted::default(),
             Err(error) => return Err(error.into()),
         };
+        // 旧版本 state.json 没有 recent 字段：用当前工作目录补一份，避免升级后菜单为空。
+        if persisted.recent.is_empty() {
+            persisted.recent = persisted
+                .workspaces
+                .iter()
+                .rev()
+                .map(|record| RecentRecord {
+                    id: record.id.clone(),
+                    name: record.name.clone(),
+                    root: record.root.clone(),
+                })
+                .collect();
+        }
         Ok(Self {
             data_dir,
             persisted,
@@ -416,6 +444,46 @@ impl Library {
             },
         }
     }
+    pub fn recent(&self) -> Vec<RecentWorkspace> {
+        self.persisted
+            .recent
+            .iter()
+            .map(|record| RecentWorkspace {
+                id: record.id.clone(),
+                name: record.name.clone(),
+                available: record.root.is_dir(),
+            })
+            .collect()
+    }
+    pub fn open_recent(
+        &mut self,
+        id: &str,
+        app: Option<&tauri::AppHandle>,
+    ) -> Result<WorkspaceInfo> {
+        let record = self
+            .persisted
+            .recent
+            .iter()
+            .find(|record| record.id == id)
+            .cloned()
+            .ok_or_else(|| AppError::new("NOT_FOUND", "该工作目录不在最近打开列表中"))?;
+        if !record.root.is_dir() {
+            return Err(AppError::new("NOT_FOUND", "该工作目录已被移动或删除"));
+        }
+        self.open(record.root, app)
+    }
+    fn remember(&mut self, id: &str, name: &str, root: &Path) {
+        self.persisted.recent.retain(|record| record.id != id);
+        self.persisted.recent.insert(
+            0,
+            RecentRecord {
+                id: id.into(),
+                name: name.into(),
+                root: root.to_path_buf(),
+            },
+        );
+        self.persisted.recent.truncate(10);
+    }
     pub fn open(&mut self, root: PathBuf, app: Option<&tauri::AppHandle>) -> Result<WorkspaceInfo> {
         let root = root.canonicalize()?;
         if !root.is_dir() {
@@ -429,8 +497,11 @@ impl Library {
             .cloned()
         {
             if !self.opened.contains_key(&existing.id) {
-                self.attach(existing.id.clone(), root, app);
+                self.attach(existing.id.clone(), root.clone(), app);
             }
+            self.remember(&existing.id, &existing.name, &root);
+            // 已打开目录只需要更新最近列表；写盘失败不应阻止切换工作目录。
+            let _ = self.persist();
             return Ok(WorkspaceInfo {
                 id: existing.id,
                 name: existing.name,
@@ -457,7 +528,8 @@ impl Library {
             name: name.clone(),
             root: root.clone(),
         });
-        self.attach(id.clone(), root, app);
+        self.attach(id.clone(), root.clone(), app);
+        self.remember(&id, &name, &root);
         self.persist()?;
         Ok(WorkspaceInfo {
             id,
@@ -1139,6 +1211,26 @@ mod tests {
         assert!(root.is_dir());
         assert_eq!(lib.read(&id, "a.md").expect_err("closed").code, "WORKSPACE");
         assert_eq!(lib.open(root, None).expect("reopen").id, id);
+    }
+
+    #[test]
+    fn recent_workspaces_survive_close_and_open_by_opaque_id() {
+        let (_temp, mut lib, id, _root) = library();
+        let recent = lib.recent();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].id, id);
+        assert!(recent[0].available);
+        lib.close(&id).expect("close");
+        let recent = lib.recent();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].id, id);
+        assert!(lib.open_recent(&id, None).expect("reopen").available);
+        assert_eq!(
+            lib.open_recent("missing", None)
+                .expect_err("unknown recent")
+                .code,
+            "NOT_FOUND"
+        );
     }
 
     #[test]

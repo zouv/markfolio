@@ -23,6 +23,7 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 |---|---|
 | src/main.tsx、App.tsx | React 挂载、主布局、对话框调度、自动保存、原生事件 |
 | src/components/TitleBar.tsx | 自绘标题栏：应用菜单、工作目录页签排序/关闭、窗口命令与缩放手柄 |
+| src/components/MenuBar.tsx | 标题栏菜单栏：读取 menu.json 渲染文件/编辑/视图等下拉菜单，复用命令启用与勾选状态 |
 | src/components/FileTabs.tsx | 列表+编辑器顶部的文档页签栏：切换、关闭、右键菜单与未打开状态 |
 | src/components/AboutDialog.tsx | 关于对话框：应用图标、名称、版本、说明、焦点循环与关闭路径 |
 | src/commands.ts、shortcuts.ts | 稳定核心命令 ID、快捷键规范化与冲突校验 |
@@ -36,7 +37,7 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 | src/metadata.ts、conversion.ts、RichEditor.tsx、editorWidgets.ts | Front Matter 保留式修改、HTML 转换、分块富文本、就地图片/公式 |
 | src/components/NoteManagement、DocumentList、Media、TransferDialog | 属性/标签/跨目录快速搜索、列表、附件/垃圾箱、导入导出 |
 | src/components/AdvancedSettings、DesktopTools、Integrations、OcrDialog、Whiteboard | 高级设置、更新/锁定、AI/API、离线 OCR、画板 |
-| src-tauri/src/library.rs | 工作区授权根、文件编码、冲突检测、索引、插件安装、设置 |
+| src-tauri/src/library.rs | 工作区授权根、最近打开记录、文件编码、冲突检测、索引、插件安装、设置 |
 | src-tauri/src/commands.rs、lib.rs | 异步 IPC、原生对话框、命令注册、窗口与菜单 |
 | src-tauri/src/menu_state.rs | 隐藏原生菜单的可用/勾选状态与快捷键更新 |
 | src-tauri/src/files/index/links/crypto.rs | 附件/垃圾箱、可重建索引、链接维护、本地加密 |
@@ -54,7 +55,7 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 
 | 改什么 | 入口 |
 |---|---|
-| 菜单与工具栏行为 | TitleBar 的应用菜单/窗口命令；App 的 dispatchRef.current、menuSignature；coreCommands；menu_state::update |
+| 菜单与工具栏行为 | TitleBar 的应用菜单/最近打开子菜单/窗口命令；MenuBar 的分组下拉（menu.json）；App 的 dispatchRef.current、menuSignature；coreCommands；menu_state::update |
 | 工作目录页签 | TitleBar：order/active、closeWorkspace、moveWorkspace、右键菜单；+ 调用 openWorkspace 后插入到右侧 |
 | 文档页签 | FileTabs：session.documents 为页签集合、session.file 为活动项；store::closeDocument；editorActions.prune |
 | 快速搜索 | NoteManagement::QuickOpen、App 的 nav.quickOpen；跨工作目录 catalog/树回退、实时过滤与高亮 |
@@ -80,12 +81,14 @@ contextFor 绑定实例工作区；synchronizePlugins 对照启用状态，创�
 
 ## 3. 重点链路
 
-- 打开目录：原生选择 → canonical 根校验 → Library 按规范根路径摘要注册稳定 ID → 不含绝对根路径的 WorkspaceInfo → 独立 Session。重复目录激活，嵌套目录拒绝。
+- 打开目录：原生选择 → canonical 根校验 → Library 按规范根路径摘要注册稳定 ID → 不含绝对根路径的 WorkspaceInfo → 独立 Session。重复目录激活，嵌套目录拒绝。每次打开同时把规范根写入最近列表（最多 10 条，去重置顶）。
+- 打开最近：TitleBar 打开应用菜单时读取 `recent_workspaces`（只返回 id/name/available）→ 点击调用 `open_recent_workspace` → Rust 按 id 在持久化列表中查找根目录 → 重新 canonical 校验并走打开目录链路。已关闭的工作目录仍保留在最近列表，绝对根路径不回传网页。
 - 编辑保存：CodeMirror 事务 → Buffer 的 text/dirty/revision → 每文档 Promise 队列 → SHA-256 基准版本比较 → 同目录临时文件 sync 与原子替换 → 更新 savedText。保存期间继续输入，完成后保留新的 dirty 内容。
 - 外部修改：notify 发送工作区 ID → 防抖 refresh → 未修改缓冲刷新；有修改缓冲保留内容并标记冲突。用户比较后选择磁盘内容或用当前磁盘版本保存自己的内容。
 - 批量操作：压缩祖先/子项重复选择 → 锁定源工作区的编辑与关闭 → 移动/复制先保存受影响缓冲，删除拒绝未保存项 → 逐项操作并报告部分失败 → 更新原工作区缓冲路径/选择/导航 → 刷新列表与索引。复制使用 create_new，保留原字节且不覆盖同名目标。
 - 设置：打开时复制基线与草稿 → 搜索定位/快捷键校验 → 按实际编辑字段合并当前设置 → 串行写盘成功后应用；失败保留原状态。插件数据按字段合并，保留后台会话/插件变化；取消丢弃未应用草稿，插件安装独立立即执行。
 - 菜单与快捷键：核心注册保留 coreCommands ID，插件命令带工作区命名空间 → 同一 overrides 用于应用菜单/命令面板/键盘 → 串行 update_menu 更新可用和勾选状态、先清旧绑定再设新绑定。自定义标题栏隐藏原生菜单，快捷键由 WebView 键盘处理器统一执行；原生菜单加速键关闭，避免同键触发两次；单独 Delete 仅作用于文件列表/树。
+- 标题栏菜单栏：MenuBar 读取 `src-tauri/menu.json` 渲染分组 → 每个菜单项用 App 的 menuSignature 结果（id/enabled/checked/shortcut）显示状态 → 点击经同一 run/dispatch 执行；menu.json 同时供隐藏原生菜单使用，改菜单分组或标题时两处一起生效。
 - 标题栏与窗口：主窗口 decorations=false → TitleBar 使用 data-tauri-drag-region 拖动/双击最大化 → 自绘最小化/最大化/关闭调用 window API → 边缘手柄 startResizeDragging；关闭仍进入 onCloseRequested 的保存/托盘/退出流程。
 - 工作目录/文件页签：工作目录页签绑定 state.order/active，拖动经 moveWorkspace 重排；文件页签来自 session.documents，点击 openDocument，关闭先保存再删除缓冲并由 editorActions.prune 清理编辑器缓存。
 - 快速搜索：Ctrl+P → QuickOpen 合并各工作目录 catalog（空索引回退文件树）→ 标题/路径/别名/标签模糊评分与高亮 → Enter 激活所属工作目录并打开笔记，#标题 跳转。
@@ -101,6 +104,7 @@ contextFor 绑定实例工作区；synchronizePlugins 对照启用状态，创�
 IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.test.mjs 核验；当前增加元数据/链接/附件/转换、插件文件服务、桌面/加密/AI/API 命令。新增命令必须三方一起改。
 
 - 文件参数为 workspaceId + 相对 path；保存额外带 text、expectedVersion、encoding。Rust 使用 snake_case，IPC 使用 camelCase。
+- `recent_workspaces` 返回 `{id,name,available}[]`（最近打开，最多 10 条，不含根路径）；`open_recent_workspace` 接收 `recentId`，只接受该列表内的 id。最近记录随 state.json 持久化；旧配置首次加载时用当前工作目录补齐。
 - Document 含 path/text/version/encoding/lineEnding；前端统一 LF，保存时恢复原 CRLF；支持 UTF-8、UTF-8 BOM、UTF-16 LE/BE BOM。
 - WorkspaceInfo 只含 id/name/available。Snapshot 含 workspaces/settings；首次 settings 必须为空对象。
 - AppError 含 code/message；NOT_FOUND 与 IO 分开，CONFLICT 暂停自动保存，其他暂时保存错误允许手动重试。
@@ -135,8 +139,11 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 - 搜索重建持有服务锁，极大目录的首次扫描可能需要等待；索引/已保存缓冲可限量。隔离 CSP/实际权限及生命周期由界面和 Rust 验证；可信模式仍拥有同页面完整能力。
 - 富文本仅规范化修改的块，特殊语法保留原源码；选区映射使用语法范围，扩展开关与行内代码决定是否隐藏标记。Fountain 预览/导出共用 fountain-js。
 - 图标由 docs/icons/_build.py 从 markfolio.svg 生成：无头 Edge 按 2048 渲染、洋红抠图后独立缩放；headless Edge 窗口高度比 `--window-size` 少约 92 px，脚本多开窗后再裁剪，避免底部截断。改图标后重跑脚本并核对 src-tauri/icons 与 docs/icons 输出一致。
-- 自定义标题栏下不要把快捷键交回原生菜单：WebView2 会先消费 Ctrl+P 等浏览器快捷键，且原生菜单加速键已关闭；核心命令统一走 App 的 keyboard 处理器，避免重复或漏触发。
+- 自定义标题栏下不要把快捷键交回原生菜单：WebView2 会先消费 Ctrl+P 等浏览器快捷键，且原生菜单加速键已关闭；核心命令统一走 App 的 keyboard 处理器，避免重复或漏触发。应用菜单的“退出”只显示系统级 `Alt+F4`，不再默认绑定 `Ctrl+Q`；`Alt+F4` 触发的是窗口关闭流程（受“关闭窗口时最小化到托盘”影响），菜单项本身仍直接请求退出。
+- `menu.json` 是菜单分组/标题的唯一来源：Rust 隐藏原生菜单与 React MenuBar 都读取它；新增核心命令时同时更新 coreCommands（执行/快捷键）与 menu.json（菜单位置），否则菜单栏不会出现该项。
+- `.workspace-columns` 内文件列表手柄的 `order` 必须取 `Math.min(listOrder, editorOrder) + 1`，不能写死为 1；写死会让手柄落到侧栏与文件列表之间，拖动时看似调整左栏、实际改变文件列表宽度。
 - 标题栏空白区用 data-tauri-drag-region="deep"；按钮、role=tab、菜单和窗口缩放手柄必须保持可交互或显式标记 data-tauri-drag-region="false"，否则会误触窗口拖动。
+- 关闭到托盘时不要 `await window.hide()` 并把拒绝当成失败：WebView2 隐藏后可能无法回传该 IPC 响应，隐藏实际已生效；应忽略 hide 的响应错误，否则会误报“关闭已取消：failed to send message to the webview”。
 - 文件页签栏放在 list+editor 的 workspace-main 内，默认位于第 2+3 栏顶部；layoutOrder 仍控制 list/editor 顺序，关闭页签前先保存，避免静默丢失未保存内容。
 - 独立实现，未复制 Joplin/Obsidian 核心；源码插件移植需按各许可证审查。
 

@@ -39,6 +39,8 @@ pub fn run() {
             commands::app_info,
             commands::app_snapshot,
             commands::open_workspace,
+            commands::recent_workspaces,
+            commands::open_recent_workspace,
             commands::close_workspace,
             commands::save_settings,
             commands::request_exit,

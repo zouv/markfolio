@@ -84,7 +84,7 @@ test("应用图标菜单可打开关于对话框并恢复焦点", async ({ page 
   await page.getByRole("button", { name: "应用菜单" }).click();
   const menu = page.getByRole("menu", { name: "应用菜单" });
   await expect(menu).toBeVisible();
-  await menu.getByRole("menuitem", { name: /关于 MarkFolio/ }).click();
+  await menu.getByRole("menuitem", { name: /^关于/ }).click();
   const dialog = page.getByRole("dialog", { name: "关于 MarkFolio" });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("img.about-app-icon")).toHaveAttribute("src", /markfolio-icon\.png/);
@@ -98,10 +98,81 @@ test("应用图标菜单可打开关于对话框并恢复焦点", async ({ page 
   await expect(page.getByRole("button", { name: "应用菜单" })).toBeFocused();
 });
 
+test("应用菜单无品牌标题，提供最近打开子菜单与 Alt+F4 提示", async ({ page }) => {
+  await page.getByRole("button", { name: "应用菜单" }).click();
+  const menu = page.getByRole("menu", { name: "应用菜单" });
+  await expect(menu.locator(".app-menu-heading")).toHaveCount(0);
+  const quit = menu.getByRole("menuitem", { name: /退出/ });
+  await expect(quit.locator("kbd")).toHaveText("Alt+F4");
+  await expect(quit).not.toHaveClass(/app-menu-danger/);
+  await menu.getByRole("menuitem", { name: "打开最近" }).click();
+  const recent = page.getByRole("menu", { name: "最近打开的工作目录" });
+  await expect(recent).toBeVisible();
+  await expect(recent.getByText("暂无最近打开的工作目录")).toBeVisible();
+});
+
+test("菜单栏位于应用图标与工作目录页签之间并可展开命令", async ({ page }) => {
+  const bar = page.getByRole("menubar", { name: "菜单栏" });
+  await expect(bar).toBeVisible();
+  const appButton = await page.getByRole("button", { name: "应用菜单" }).boundingBox();
+  const barBox = await bar.boundingBox();
+  const tabsBox = await page.getByRole("tablist", { name: "工作目录页签" }).boundingBox();
+  expect(appButton && barBox && tabsBox).toBeTruthy();
+  expect(barBox!.x).toBeGreaterThanOrEqual(appButton!.x + appButton!.width - 1);
+  expect(barBox!.x + barBox!.width).toBeLessThanOrEqual(tabsBox!.x + 1);
+
+  await bar.getByRole("menuitem", { name: "视图" }).click();
+  const menu = page.getByRole("menu", { name: "视图" });
+  await expect(menu).toBeVisible();
+  const toggle = menu.getByRole("menuitem", { name: "显示 / 隐藏侧栏" });
+  await expect(toggle.locator(".menu-check svg")).toHaveCount(1);
+  await toggle.click();
+  await expect(page.locator(".sidebar")).toHaveCount(0);
+
+  await bar.getByRole("menuitem", { name: "视图" }).click();
+  await expect(menu).toBeVisible();
+  await expect(toggle.locator(".menu-check svg")).toHaveCount(0);
+  await toggle.click();
+  await expect(page.locator(".sidebar")).toBeVisible();
+});
+
+test("左右两个宽度手柄分别调整侧栏与文件栏宽度", async ({ page }) => {
+  const sidebar = page.locator(".sidebar");
+  const list = page.locator(".file-list");
+  const drag = async (handle: ReturnType<typeof page.locator>, delta: number) => {
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + delta, box.y + box.height / 2, { steps: 5 });
+    await page.mouse.up();
+  };
+  const beforeSidebar = (await sidebar.boundingBox())!.width;
+  const beforeList = (await list.boundingBox())!.width;
+  await drag(page.locator(".resize-handle").nth(0), 60);
+  expect((await sidebar.boundingBox())!.width).toBeGreaterThan(beforeSidebar + 40);
+  expect(Math.abs((await list.boundingBox())!.width - beforeList)).toBeLessThan(2);
+  const beforeListSecond = (await list.boundingBox())!.width;
+  const beforeSidebarSecond = (await sidebar.boundingBox())!.width;
+  await drag(page.locator(".resize-handle").nth(1), 40);
+  expect((await list.boundingBox())!.width).toBeGreaterThan(beforeListSecond + 25);
+  expect(Math.abs((await sidebar.boundingBox())!.width - beforeSidebarSecond)).toBeLessThan(2);
+});
+
+test("桌面设置提供“关闭窗口时最小化到托盘”且默认不勾选", async ({ page }) => {
+  await page.getByRole("button", { name: "应用菜单" }).click();
+  await page.getByRole("menu", { name: "应用菜单" }).getByRole("menuitem", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置", exact: true });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "桌面" }).click();
+  const row = dialog.locator('[data-setting="minimizeToTray"]');
+  await expect(row).toContainText("关闭窗口时最小化到托盘");
+  await expect(row.getByRole("checkbox")).not.toBeChecked();
+});
+
 test("关于对话框支持 Escape、遮罩关闭与焦点循环", async ({ page }) => {
   const openAbout = async () => {
     await page.getByRole("button", { name: "应用菜单" }).click();
-    await page.getByRole("menu", { name: "应用菜单" }).getByRole("menuitem", { name: /关于 MarkFolio/ }).click();
+    await page.getByRole("menu", { name: "应用菜单" }).getByRole("menuitem", { name: /^关于/ }).click();
     const dialog = page.getByRole("dialog", { name: "关于 MarkFolio" });
     await expect(dialog).toBeVisible();
     return dialog;

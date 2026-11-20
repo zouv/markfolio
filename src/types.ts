@@ -1,6 +1,7 @@
 import { t } from "./i18n";
 export type AppInfo = { name: string; version: string };
 export type WorkspaceInfo = { id: string; name: string; available: boolean };
+export type RecentWorkspace = { id: string; name: string; available: boolean };
 export type FileEntry = {
   name: string;
   path: string;

@@ -54,6 +54,7 @@ export type State = {
   active: string;
   initialize(): Promise<void>;
   openWorkspace(): Promise<void>;
+  openRecentWorkspace(recentId: string): Promise<void>;
   activate(id: string): void;
   moveWorkspace(id: string, index: number): void;
   closeWorkspace(id: string): Promise<void>;
@@ -135,6 +136,25 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         patchSession(id, {
           documents: { ...session.documents, [path]: { ...buffer, ...patch } },
         });
+    }
+    async function adoptWorkspace(info: WorkspaceInfo): Promise<void> {
+      if (!get().sessions[info.id])
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [info.id]: initialSession(info, state.settings),
+          },
+          order: [...state.order, info.id],
+        }));
+      patchSession(info.id, { info });
+      get().activate(info.id);
+      await get().refresh(info.id);
+      const previous = get().settings.sessions[info.id]?.file;
+      if (previous && !get().sessions[info.id]?.file)
+        await get()
+          .openDocument(info.id, previous)
+          .catch(() => {});
+      void get().reindex(info.id);
     }
     function persist(): void {
       clearTimeout(persistTimer);
@@ -222,23 +242,19 @@ export function createAppStore(apiService: typeof defaultApi = defaultApi) {
         try {
           const info = await api.openWorkspace();
           if (!info) return;
-          if (!get().sessions[info.id])
-            set((state) => ({
-              sessions: {
-                ...state.sessions,
-                [info.id]: initialSession(info, state.settings),
-              },
-              order: [...state.order, info.id],
-            }));
-          patchSession(info.id, { info });
-          get().activate(info.id);
-          await get().refresh(info.id);
-          const previous = get().settings.sessions[info.id]?.file;
-          if (previous && !get().sessions[info.id]?.file)
-            await get()
-              .openDocument(info.id, previous)
-              .catch(() => {});
-          void get().reindex(info.id);
+          await adoptWorkspace(info);
+        } catch (error) {
+          get().setNotice(displayError(error));
+        }
+      },
+      async openRecentWorkspace(recentId) {
+        if(!mainWindow()){get().setNotice(t("请在主窗口打开工作目录"));return;}
+        if (!api.isTauriRuntime()) {
+          get().setNotice(t("请运行桌面版以选择本地目录；浏览器仅用于界面预览。"));
+          return;
+        }
+        try {
+          await adoptWorkspace(await api.openRecentWorkspace(recentId));
         } catch (error) {
           get().setNotice(displayError(error));
         }

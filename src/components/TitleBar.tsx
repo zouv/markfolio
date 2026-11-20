@@ -3,6 +3,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import {
   ChevronDown,
+  ChevronRight,
+  Clock3,
   Command as CommandIcon,
   Copy,
   FolderOpen,
@@ -19,10 +21,12 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { t } from "../i18n";
 import { useApp } from "../store";
+import type { RecentWorkspace } from "../types";
 import * as api from "../api";
 import { coreCommands } from "../commands";
 import { effectiveShortcut } from "../shortcuts";
 import { PluginButtons } from "./PluginContributions";
+import MenuBar from "./MenuBar";
 
 type ResizeDirection = "East" | "North" | "NorthEast" | "NorthWest" | "South" | "SouthEast" | "SouthWest" | "West";
 type MenuPoint = { x: number; y: number };
@@ -38,20 +42,18 @@ function MenuItem({
   label,
   shortcut,
   disabled,
-  danger,
   onClick,
 }: {
   icon: LucideIcon;
   label: string;
   shortcut?: string;
   disabled?: boolean;
-  danger?: boolean;
   onClick(): void;
 }) {
   return (
     <button
       role="menuitem"
-      className={danger ? "app-menu-item app-menu-danger" : "app-menu-item"}
+      className="app-menu-item"
       disabled={disabled}
       onClick={onClick}
     >
@@ -65,10 +67,12 @@ export default function TitleBar({
   run,
   guard,
   openWorkspaceAt,
+  commands,
 }: {
   run(id: string): void;
   guard(operation: () => Promise<unknown>): void;
   openWorkspaceAt(index: number): Promise<void>;
+  commands: api.MenuUpdate[];
 }) {
   const state = useApp();
   const settings = state.settings;
@@ -78,6 +82,8 @@ export default function TitleBar({
   const [dragId, setDragId] = useState<string>();
   const [dropTarget, setDropTarget] = useState<{ id: string; after: boolean }>();
   const [maximized, setMaximized] = useState(false);
+  const [recent, setRecent] = useState<RecentWorkspace[]>([]);
+  const [recentOpen, setRecentOpen] = useState(false);
   const appButton = useRef<HTMLButtonElement>(null);
   const appMenuRef = useRef<HTMLDivElement>(null);
   const tabMenuRef = useRef<HTMLDivElement>(null);
@@ -108,6 +114,21 @@ export default function TitleBar({
     if (!tabMenu) return;
     requestAnimationFrame(() => tabMenuRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus());
   }, [tabMenu]);
+  useEffect(() => {
+    if (!appMenu) {
+      setRecentOpen(false);
+      return;
+    }
+    if (!api.isTauriRuntime() || !main) {
+      setRecent([]);
+      return;
+    }
+    let cancelled = false;
+    void api.recentWorkspaces()
+      .then((list) => { if (!cancelled) setRecent(list); })
+      .catch(() => { if (!cancelled) setRecent([]); });
+    return () => { cancelled = true; };
+  }, [appMenu, main]);
 
   useEffect(() => {
     if (!appMenu && !tabMenu) return;
@@ -166,6 +187,9 @@ export default function TitleBar({
     void getCurrentWindow().startResizeDragging(direction);
   };
   const activeSession = state.sessions[state.active];
+  const quitShortcut = main
+    ? settings.shortcuts["app.quit"] || "Alt+F4"
+    : shortcutFor("app.closeWindow", settings.shortcuts);
 
   return (
     <header
@@ -187,6 +211,8 @@ export default function TitleBar({
         <img className="app-menu-mark" src="/markfolio-icon.png" alt="" draggable={false} />
         <ChevronDown size={11} className="app-menu-caret" />
       </button>
+
+      <MenuBar commands={commands} run={run} />
 
       <div className="workspace-tabs" role="tablist" aria-label={t("工作目录页签")}>
         {state.order.map((id) => {
@@ -299,16 +325,45 @@ export default function TitleBar({
         <>
           <div className="context-backdrop" data-tauri-drag-region="false" onClick={closeMenus} />
           <div ref={appMenuRef} className="app-menu" style={{ left: appMenu.x, top: appMenu.y }} role="menu" aria-label={t("应用菜单")} onKeyDown={menuKeyDown}>
-            <div className="app-menu-heading"><img className="app-menu-heading-icon" src="/markfolio-icon.png" alt="" draggable={false} /><span>Mark<span className="brand-accent">Folio</span></span></div>
             <MenuItem icon={FolderOpen} label={t("打开工作目录")} shortcut={shortcutFor("workspace.open", settings.shortcuts)} disabled={!main || activeSession?.mutating} onClick={() => { closeMenus(); run("workspace.open"); }} />
+            <div className={`app-menu-sub${appMenu.x + 242 * 2 > window.innerWidth ? " align-left" : ""}`} onMouseLeave={() => setRecentOpen(false)}>
+              <button
+                role="menuitem"
+                className="app-menu-item"
+                aria-haspopup="menu"
+                aria-expanded={recentOpen}
+                disabled={!main}
+                onMouseEnter={() => setRecentOpen(true)}
+                onFocus={() => setRecentOpen(true)}
+                onClick={() => setRecentOpen(true)}
+              >
+                <span><Clock3 size={15} />{t("打开最近")}</span>
+                <ChevronRight size={13} className="app-menu-sub-arrow" />
+              </button>
+              {recentOpen && (
+                <div className="app-menu app-submenu" role="menu" aria-label={t("最近打开的工作目录")}>
+                  {recent.length ? recent.map((item) => (
+                    <MenuItem
+                      key={item.id}
+                      icon={FolderOpen}
+                      label={item.available ? item.name : `${item.name} · ${t("不可用")}`}
+                      disabled={!item.available || !!activeSession?.mutating}
+                      onClick={() => { closeMenus(); guard(() => state.openRecentWorkspace(item.id)); }}
+                    />
+                  )) : (
+                    <p className="app-menu-empty">{t("暂无最近打开的工作目录")}</p>
+                  )}
+                </div>
+              )}
+            </div>
             <MenuItem icon={Search} label={t("快速搜索")} shortcut={shortcutFor("nav.quickOpen", settings.shortcuts)} onClick={() => { closeMenus(); run("nav.quickOpen"); }} />
             <MenuItem icon={CommandIcon} label={t("命令面板")} shortcut={shortcutFor("app.palette", settings.shortcuts)} onClick={() => { closeMenus(); run("app.palette"); }} />
             <MenuItem icon={settings.theme === "dark" ? Sun : Moon} label={t("切换主题")} onClick={() => { closeMenus(); state.updateSettings({ theme: settings.theme === "dark" ? "light" : "dark" }); }} />
             <div className="app-menu-separator" role="separator" />
-            <MenuItem icon={Settings2} label={t("设置")} shortcut={shortcutFor("app.settings", settings.shortcuts)} onClick={() => { closeMenus(); run("app.settings"); }} />
-            <MenuItem icon={Info} label={`${t("关于 MarkFolio")}…`} onClick={() => { closeMenus(); run("app.about"); }} />
+            <MenuItem icon={Settings2} label={`${t("设置")}…`} shortcut={shortcutFor("app.settings", settings.shortcuts)} onClick={() => { closeMenus(); run("app.settings"); }} />
+            <MenuItem icon={Info} label={`${t("关于")}…`} onClick={() => { closeMenus(); run("app.about"); }} />
             <div className="app-menu-separator" role="separator" />
-            <MenuItem icon={Power} label={main ? t("退出") : t("关闭窗口")} shortcut={main ? shortcutFor("app.quit", settings.shortcuts) : shortcutFor("app.closeWindow", settings.shortcuts)} danger onClick={() => { closeMenus(); run(main ? "app.quit" : "app.closeWindow"); }} />
+            <MenuItem icon={Power} label={main ? t("退出") : t("关闭窗口")} shortcut={quitShortcut} onClick={() => { closeMenus(); run(main ? "app.quit" : "app.closeWindow"); }} />
           </div>
         </>
       )}

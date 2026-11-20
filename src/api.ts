@@ -3,6 +3,7 @@ import type {
   AppInfo,
   Snapshot,
   WorkspaceInfo,
+  RecentWorkspace,
   FileEntry,
   Document,
   SearchHit,
@@ -22,6 +23,12 @@ export function getSnapshot(): Promise<Snapshot> {
 }
 export function openWorkspace(): Promise<WorkspaceInfo | null> {
   return invoke<WorkspaceInfo | null>("open_workspace");
+}
+export function recentWorkspaces(): Promise<RecentWorkspace[]> {
+  return invoke<RecentWorkspace[]>("recent_workspaces");
+}
+export function openRecentWorkspace(recentId: string): Promise<WorkspaceInfo> {
+  return invoke<WorkspaceInfo>("open_recent_workspace", { recentId });
 }
 export function closeWorkspace(workspaceId: string): Promise<null> {
   return invoke<null>("close_workspace", { workspaceId });

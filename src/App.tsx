@@ -3,6 +3,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -176,15 +177,19 @@ export default function App() {
       };
     }),
   );
+  const menuItems = useMemo(
+    () => JSON.parse(menuSignature) as api.MenuUpdate[],
+    [menuSignature],
+  );
   useEffect(() => {
     if (!api.isTauriRuntime()) return;
     menuQueue.current = menuQueue.current
       .catch(() => {})
       .then(async () => {
-        await api.updateMenu(JSON.parse(menuSignature));
+        await api.updateMenu(menuItems);
       })
       .catch((error) => useApp.getState().setNotice(displayError(error)));
-  }, [menuSignature]);
+  }, [menuItems]);
   const guard = useCallback((operation: () => Promise<unknown>) => {
     void operation().catch((error) =>
       useApp.getState().setNotice(displayError(error)),
@@ -329,7 +334,12 @@ export default function App() {
         const shell=document.querySelector<HTMLElement>(".app-shell");if(shell)shell.inert=true;
         try {
           await flushDocuments();
-          if(getCurrentWindow().label==="main"&&useApp.getState().settings.minimizeToTray&&useApp.getState().settings.tray){await getCurrentWindow().hide();if(shell)shell.inert=false;return;}
+          if(getCurrentWindow().label==="main"&&useApp.getState().settings.minimizeToTray&&useApp.getState().settings.tray){
+            // 窗口隐藏后 WebView2 可能无法回传 hide() 的 IPC 响应；隐藏已生效，不要把响应失败当成关闭取消。
+            void getCurrentWindow().hide().catch(()=>{});
+            if(shell)shell.inert=false;
+            return;
+          }
           allowClose.current = true;
           await getCurrentWindow().close();
         } catch (error) {
@@ -782,7 +792,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <TitleBar run={run} guard={guard} openWorkspaceAt={openWorkspaceAt} />
+      <TitleBar run={run} guard={guard} openWorkspaceAt={openWorkspaceAt} commands={menuItems} />
       {!state.ready ? (
         <div className="loading">{t("正在打开 MarkFolio…")}</div>
       ) : !session ? (
@@ -848,7 +858,7 @@ export default function App() {
           <div className="workspace-main" style={{order: mainOrder}}>
             <FileTabs run={run} guard={guard} />
             <div className="workspace-columns">
-              {settings.showList && (<><DocumentList session={session} query={query} setQuery={setQuery} searchRef={searchRef} run={run} /><div className="resize-handle" style={{order:1}} onPointerDown={event=>resize(event,"listWidth")} /></>)}
+              {settings.showList && (<><DocumentList session={session} query={query} setQuery={setQuery} searchRef={searchRef} run={run} /><div className="resize-handle" style={{order:Math.min(listOrder, editorOrder)+1}} onPointerDown={event=>resize(event,"listWidth")} /></>)}
               <section className="document-area" style={{order: editorOrder}}>
             <div className="document-navigation">
               <div>

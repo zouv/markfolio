@@ -1,6 +1,6 @@
 use crate::library::{
-    AppError, Document, FileEntry, Library, PluginBundle, Result, SearchHit, SharedLibrary,
-    Snapshot, WorkspaceInfo,
+    AppError, Document, FileEntry, Library, PluginBundle, RecentWorkspace, Result, SearchHit,
+    SharedLibrary, Snapshot, WorkspaceInfo,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
@@ -50,6 +50,18 @@ pub async fn open_workspace(
     };
     let root = directory.path().to_path_buf();
     access(state, move |lib| lib.open(root, Some(&app)).map(Some)).await
+}
+#[tauri::command]
+pub async fn recent_workspaces(state: State<'_, SharedLibrary>) -> Result<Vec<RecentWorkspace>> {
+    access(state, |lib| Ok(lib.recent())).await
+}
+#[tauri::command]
+pub async fn open_recent_workspace(
+    app: AppHandle,
+    recent_id: String,
+    state: State<'_, SharedLibrary>,
+) -> Result<WorkspaceInfo> {
+    access(state, move |lib| lib.open_recent(&recent_id, Some(&app))).await
 }
 #[tauri::command]
 pub async fn close_workspace(

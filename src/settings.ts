@@ -135,7 +135,7 @@ export const settingsCatalog = [
   ["markdown","remoteImages","远程图片","手动加载"],
   ["plugins","safeMode","安全模式","停止插件"],
   ["desktop","tray","托盘图标","系统托盘"],
-  ["desktop","minimizeToTray","关闭到托盘","隐藏窗口"],
+  ["desktop","minimizeToTray","关闭窗口时最小化到托盘","隐藏窗口"],
   ["desktop","globalShortcut","全局快捷键","唤起"],
   ["desktop","updateUrl","更新服务","版本检查"],
   ["advanced","indexMaxMb","搜索缓存上限","大目录 索引"],
