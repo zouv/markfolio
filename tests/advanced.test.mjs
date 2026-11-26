@@ -8,7 +8,7 @@ import { validateFields } from "../src/plugins/sdk.ts";
 import { validateWhiteboard } from "../src/whiteboard.ts";
 import { prepareMarkdown,createRenderer } from "../src/markdown.ts";
 import { renderFountain } from "../src/fountain.ts";
-import { inlinePreviewRanges } from "../src/editorWidgets.ts";
+import { imageRanges, mathRanges } from "../src/livePreview.ts";
 import { nextEditorLayout, settingsDraftPatch, noteSortFor, noteSortPatch } from "../src/settings.ts";
 import { editTable } from "../src/tableEditing.ts";
 import { visibleNotes } from "../src/components/NoteManagement.tsx";
@@ -58,7 +58,8 @@ test("wiki preprocessing and editor widgets preserve front matter, inline code, 
   const source="---\ncustom: '[[metadata]]'\n---\n[[note]]\n`[[inline]]`\n\n    [[indented]]\n\n````\n[[fenced]]\n```\n![hidden](hidden.png)\n````\n\n$$\nx^2 + y^2\n$$\n\n![real](real.png)\n";
   const prepared=prepareMarkdown(source);
   assert.ok(prepared.includes("markfolio-wiki:note"));assert.ok(prepared.includes("`[[inline]]`"));assert.ok(prepared.includes("    [[indented]]"));assert.ok(prepared.includes("[[fenced]]"));assert.ok(!prepared.includes("[[metadata]]"));
-  const widgets=inlinePreviewRanges(source);assert.equal(widgets.length,2);assert.equal(widgets[0].kind,"math");assert.equal(widgets[0].source,"x^2 + y^2");assert.equal(widgets[1].source,"real.png");
+  const math=mathRanges(source);assert.equal(math.length,1);assert.equal(math[0].source,"x^2 + y^2");
+  const images=imageRanges(source);assert.equal(images.length,1);assert.equal(images[0].source,"real.png");assert.equal(images[0].alt,"real");
 });
 
 test("todo filtering and sort direction keep pinned and unfinished notes at the top",()=>{

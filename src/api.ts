@@ -141,6 +141,13 @@ export function openLocalFile(
   return invoke<null>("open_local_file", { workspaceId, path });
 }
 
+export function copyEntryPath(
+  workspaceId: string,
+  path: string,
+): Promise<null> {
+  return invoke<null>("copy_entry_path", { workspaceId, path });
+}
+
 export function openExternalLink(url: string): Promise<null> {
   return invoke<null>("open_external_link", { url });
 }

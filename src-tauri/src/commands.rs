@@ -598,6 +598,14 @@ pub async fn external_editor_sessions(
     access(state, |lib| lib.external_sessions()).await
 }
 #[tauri::command]
+pub async fn copy_entry_path(
+    workspace_id: String,
+    path: String,
+    state: State<'_, SharedLibrary>,
+) -> Result<()> {
+    access(state, move |lib| lib.copy_path(&workspace_id, &path)).await
+}
+#[tauri::command]
 pub async fn reveal_entry(
     workspace_id: String,
     path: String,

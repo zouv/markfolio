@@ -127,7 +127,7 @@ export default function Preview({
       <div
         className="markdown-preview"
         tabIndex={0}
-        style={{ fontSize: settings.previewFontSize, fontFamily: settings.previewFontFamily, maxWidth: settings.previewWidth || undefined }}
+        style={{ fontSize: settings.previewFontSize, fontFamily: settings.previewFontFamily, maxWidth: settings.mode === "preview" ? undefined : settings.previewWidth || undefined }}
         ref={container}
         onClick={(event) => {
           const task = (event.target as HTMLElement).closest<HTMLInputElement>(

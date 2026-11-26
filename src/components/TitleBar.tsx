@@ -372,6 +372,8 @@ export default function TitleBar({
         <>
           <div className="context-backdrop" data-tauri-drag-region="false" onClick={closeMenus} />
           <div ref={tabMenuRef} className="app-menu tab-menu" style={{ left: tabMenu.x, top: tabMenu.y }} role="menu" aria-label={t("工作目录页签")} onKeyDown={menuKeyDown}>
+            <MenuItem icon={FolderOpen} label={t("在资源管理器中打开目录")} disabled={!main || !state.sessions[tabMenu.id]?.info.available} onClick={() => { closeMenus(); guard(() => api.openLocalFile(tabMenu.id, "")); }} />
+            <div className="app-menu-separator" role="separator" />
             <MenuItem icon={X} label={t("关闭工作目录")} disabled={!main || state.sessions[tabMenu.id]?.mutating} onClick={() => { closeMenus(); closeWorkspace(tabMenu.id); }} />
             <MenuItem icon={X} label={t("关闭其他工作目录")} disabled={!main || state.order.length < 2} onClick={() => { closeMenus(); closeOthers(tabMenu.id); }} />
             <div className="app-menu-separator" role="separator" />

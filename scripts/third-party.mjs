@@ -74,6 +74,7 @@ visit(metadata.resolve.root);
 for (const pkg of metadata.packages.filter(pkg => used.has(pkg.id) && !metadata.workspace_members.includes(pkg.id))) {
   const directory = path.dirname(pkg.manifest_path), additional = [];
   if (pkg.name === 'alloc-stdlib') additional.push('BSD-3-Clause-alloc.txt');
+  if (pkg.name === 'clipboard-win') additional.push('BSL-1.0.txt');
   if (['onenote_parser', 'onenote_parser-macros', 'selectors'].includes(pkg.name)) additional.push('MPL-2.0.txt');
   if (pkg.name.startsWith('webview2-com')) additional.push('MIT-webview2.txt');
   if (pkg.name === 'tauri-plugin') {

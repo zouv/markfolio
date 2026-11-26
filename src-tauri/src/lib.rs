@@ -35,6 +35,16 @@ pub fn run() {
             });
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Focused(true))
+                && window.is_visible().unwrap_or(false)
+            {
+                // 外部 WinShow/WinActivate 只改变 Win32 状态；聚焦时经 Tauri 同步
+                // 内部可见状态，避免后续 hide/maximize 因缓存过期而失效。隐藏后的
+                // 延迟焦点事件不满足可见条件，不会把窗口重新显示。
+                let _ = window.show();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::app_snapshot,
@@ -82,6 +92,7 @@ pub fn run() {
             commands::select_external_editor,
             commands::external_edit,
             commands::external_editor_sessions,
+            commands::copy_entry_path,
             commands::reveal_entry,
             commands::lock_document,
             commands::ai_config,

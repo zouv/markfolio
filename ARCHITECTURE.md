@@ -24,18 +24,20 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 | src/main.tsx、App.tsx | React 挂载、主布局、对话框调度、自动保存、原生事件 |
 | src/components/TitleBar.tsx | 自绘标题栏：应用菜单、工作目录页签排序/关闭、窗口命令与缩放手柄 |
 | src/components/MenuBar.tsx | 标题栏菜单栏：读取 menu.json 渲染文件/编辑/视图等下拉菜单，复用命令启用与勾选状态 |
-| src/components/FileTabs.tsx | 列表+编辑器顶部的文档页签栏：切换、关闭、右键菜单与未打开状态 |
+| src/components/FileTabs.tsx | 列表+编辑器顶部的文档页签栏：切换、关闭、右键菜单（相对/完整路径复制、资源管理器定位）与未打开状态 |
+| src/components/DirectoryPicker.tsx | 移动/批量移动对话框的目录树选择器：按需加载文件夹、展开/选中、禁用被移动项自身及其子目录 |
+| src/components/NoteMenuItems.tsx | 笔记右键菜单共享项：复制名称/相对/完整路径、资源管理器定位、移动/回收站/属性/链接/全选；文档列表与文件树复用同一份，避免菜单漂移 |
 | src/components/AboutDialog.tsx | 关于对话框：应用图标、名称、版本、说明、焦点循环与关闭路径 |
 | src/commands.ts、shortcuts.ts | 稳定核心命令 ID、快捷键规范化与冲突校验 |
 | src/fileOperations.ts、settings.ts | 批量文件操作与变更摘要、设置草稿差量合并和搜索目录 |
 | src/components/ | 文件树、设置、冲突比较、按钮及插件面板 |
 | src/store.ts、types.ts | 工作区独立会话、文档缓冲、保存队列、类型与相对路径 |
-| src/Editor.tsx | CodeMirror 6、撤销缓存、编辑操作、设置重配 |
+| src/Editor.tsx、livePreview.ts | CodeMirror 6 单一编辑内核、实时预览/富文本装饰、编辑器命令与设置重配 |
 | src/markdown.ts、Preview.tsx | Markdown 解析、标题锚点、任务切换、附件与图表渲染 |
 | src/api.ts | 所有 IPC 的唯一 TypeScript 封装 |
 | src/plugins/sdk.ts、runtime.ts、isolated.ts、public/plugin-frame.* | SDK 1/2、工作区实例、默认隔离 Worker/iframe 与显式可信 ESM、生命周期 |
-| src/metadata.ts、conversion.ts、RichEditor.tsx、editorWidgets.ts | Front Matter 保留式修改、HTML 转换、分块富文本、就地图片/公式 |
-| src/components/NoteManagement、DocumentList、Media、TransferDialog | 属性/标签/跨目录快速搜索、列表、附件/垃圾箱、导入导出 |
+| src/metadata.ts、conversion.ts | Front Matter 保留式修改、HTML 转换 |
+| src/components/NoteManagement、DocumentList、Media、TransferDialog | 属性/标签/跨目录快速搜索、文档列表（标题+篇数同行、自定义排序菜单、空白右键新建/打开目录）、附件/垃圾箱、导入导出 |
 | src/components/AdvancedSettings、DesktopTools、Integrations、OcrDialog、Whiteboard | 高级设置、更新/锁定、AI/API、离线 OCR、画板 |
 | src-tauri/src/library.rs | 工作区授权根、最近打开记录、文件编码、冲突检测、索引、插件安装、设置 |
 | src-tauri/src/commands.rs、lib.rs | 异步 IPC、原生对话框、命令注册、窗口与菜单 |
@@ -56,15 +58,18 @@ React 在 Tauri 的本地 WebView 内运行；Rust 管理用户选定的目录�
 | 改什么 | 入口 |
 |---|---|
 | 菜单与工具栏行为 | TitleBar 的应用菜单/最近打开子菜单/窗口命令；MenuBar 的分组下拉（menu.json）；App 的 dispatchRef.current、menuSignature；coreCommands；menu_state::update |
-| 工作目录页签 | TitleBar：order/active、closeWorkspace、moveWorkspace、右键菜单；+ 调用 openWorkspace 后插入到右侧 |
-| 文档页签 | FileTabs：session.documents 为页签集合、session.file 为活动项；store::closeDocument；editorActions.prune |
+| 工作目录页签 | TitleBar：order/active、closeWorkspace、moveWorkspace、右键菜单（资源管理器打开目录）；+ 调用 openWorkspace 后插入到右侧 |
+| 文档页签 | FileTabs：session.documents 为页签集合、session.file 为活动项；store::closeDocument；editorActions.prune；右键复制相对/完整路径 |
+| 文档列表右键 | DocumentList：标题与篇数同行、排序/反转/摘要详情为统一按钮组（自定义排序菜单）；空白区右键新建笔记或在资源管理器中打开；笔记菜单复用 NoteMenuItems；完整路径走 Rust `copy_entry_path` |
+| 文件树右键与目录展开 | FileTree：顶部显示工作区名+显示/隐藏第二栏，不再显示根目录行；笔记菜单复用 NoteMenuItems；目录菜单新建笔记/目录、复制路径、资源管理器打开；空白右键根目录新建；目录左键单击展开/收起 |
+| 移动目录选择 | App::submitEntry 的 move/batch-move 分支；DirectoryPicker 调 `list_directory` 按需加载文件夹；operateFiles(...,"move",目标目录) 统一更新缓冲/历史/树 |
 | 快速搜索 | NoteManagement::QuickOpen、App 的 nav.quickOpen；跨工作目录 catalog/树回退、实时过滤与高亮 |
 | 关于对话框 | AboutDialog；应用菜单 app.about 打开，closeAbout 恢复焦点；第三方资源入口打开独立 ToolWindow |
 | 新建、移动、删除、复制、多选 | App::submitEntry、FileTree；fileOperations::operateFiles/moveEntry；store::selectFiles |
 | 自定义快捷键 | shortcuts::normalizeShortcut/validateShortcuts/effectiveShortcut；SettingsContent 的 keymap；App 的 keyboard（WebView 统一处理） |
 | 保存、目录状态 | createAppStore 的 save、refresh、openDocument、closeWorkspace、closeDocument、moveWorkspace、persistSettings；flushDocuments |
 | 文本编辑与撤销 | Editor、editorActions；状态缓存键为工作区 ID + 相对路径；capture/insertCaptured 保存并映射原选区，失败返回 false |
-| 富文本、表格、独立排序 | RichEditor、richSelection::sourceBoundary、tableEditing::editTable；settings::noteSortFor/noteSortPatch |
+| 富文本、表格、独立排序 | livePreview 的语法树装饰（活动行源码 / 富文本隐藏标记、工具栏切换样式）、tableEditing::editTable；settings::noteSortFor/noteSortPatch |
 | Markdown 渲染 | createRenderer、prepareMarkdown、createTOC、toggleTask；Preview |
 | 选项、插件配置 | SettingsDialog::apply、settingsDraftPatch/settingsCatalog；store::applySettings；即时布局操作用 updateSettings |
 | 冲突处理 | ConflictDialog::keepMine、store.reload；保存仍验证磁盘版本 |
@@ -111,6 +116,7 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 - Settings 的主题、编辑、布局是应用级；sessions 与 plugins 按工作区 ID 隔离；externalLinkHosts 存允许的网站主机。
 - Settings.folderSorts 是工作区 ID → 相对目录 → sort/reverseSort；perFolderSort 决定是否采用目录级排序，全部/待办等视图采用全局排序。配置草稿按嵌套字段差量合并。
 - Settings.shortcuts 为 commandId → 组合键字符串；缺省用默认键，空字符串取消绑定。Session.selected/selectionAnchor/mutating 是内存内的工作区选择/操作状态。update_menu 接收 id/enabled/checked?/shortcut 数组；duplicate_entry 返回新文件的相对路径。
+- `copy_entry_path` 接收 workspaceId + 相对 path，在 Rust 侧 canonical 校验后直接写系统剪贴板，只返回 null，**不把绝对路径回传网页**；`reveal_entry`、`open_local_file` 同理。移动/批量移动把目标目录传给 `fileOperations::operateFiles(...,"move",目录)`，文件名保持不变。
 - SDK 公开接口以 sdk.ts 为准。默认隔离插件在 opaque iframe 的 Worker 执行，仅白名单消息转发；文件访问后端逐次校验工作区授予权限。trusted 模式拥有宿主页面能力，需要显式授权，不能当作沙箱。
 
 ## 6. 运维
@@ -119,7 +125,7 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 - 版本唯一来源 Cargo.toml；标识 dev.markfolio.app；Vite 端口读取 tauri.conf.json。
 - 主可执行文件名为 MarkFolio：Cargo `[[bin]]` 与 `tauri.conf.json` 的 `mainBinaryName` 保持一致；scripts/package.mjs 优先按 mainBinaryName、其次 `[[bin]]` 名称从 target 收集产物。
 - 产物 dist/web、dist/dev、dist/release；用户设置、插件、索引在系统 app_data_dir。
-- scripts/sync-assets.mjs 从锁定包同步 OCR/PDF/公式字体，再调用 third-party.mjs 收集许可/署名和 MPL/EPL 组件包源码。public/third-party 为生成资源；许可证缺失阻止构建。
+- scripts/sync-assets.mjs 从锁定包同步 OCR/PDF/公式字体，再调用 third-party.mjs 收集许可/署名和 MPL/EPL 组件包源码。public/third-party 为生成资源；许可证缺失阻止构建。新增 Rust 依赖后先跑 `node scripts/third-party.mjs`；上游 crate 没有许可文件时（如 `clipboard-win` 的 BSL-1.0）需在 `licenses/overrides/` 补标准文本并在 third-party.mjs 映射，否则 `beforeBuildCommand` 会让 `tauri build` / `package.bat` 失败。
 - scripts/package.mjs 在 Release/Debug 包中复制文档、插件示例、剪藏、第三方目录，并分别建立 unpack-manifest.json；安装器的 bundle.resources 带相同资源。
 - 运行时测试目录、日志及界面检查样本在被忽略的 .runtime；不捆绑真实用户文件。
 - 主窗口 `decorations=false`（笔记窗口同样自绘），TitleBar 负责拖动、最大化/还原、最小化、关闭与边缘缩放；capabilities 只额外开放这些窗口命令权限。原生菜单仍挂载但隐藏，且不注册加速键。
@@ -131,19 +137,27 @@ IPC 清单由 commands.rs、lib.rs 与 api.ts 一致定义并由 tests/contract.
 - checked_relative 拒绝绝对路径、冒号、反斜杠和上级逃逸；canonical 校验防止链接越界。移动/删除选中的链接时操作目录项本身。
 - 历史导航和会话内撤销是编辑功能，不是持久文件历史；临时替换文件完成后不保留旧版本。
 - 后台结果必须绑定原工作区，禁止用当前全局目录决定写入位置。
-- CodeMirror 实例按工作区/文档缓存，编辑期间只同步内容，不逐键重建视图。
+- CodeMirror 实例按工作区/文档缓存，编辑期间只同步内容，不逐键重建视图；实时预览的块级 widget 必须由 StateField 提供（ViewPlugin 不允许块装饰），装饰按文档/选择行变化重建，避免每个按键都全量重算。
 - Windows 打包目录提升遇到暂时文件占用时有有限重试，并通过 scripts/move-package.ps1 做范围校验后使用原生移动；失败保留待发布目录并回滚旧产物。
 - 打包收集安装器通过 package-lib::isInstallerForVersion 筛选当前完整版本，保留旧构建缓存但不将旧版安装器混入交付目录。
 - MSI 使用 zh-CN 构建，避免默认 en-US 1252 代码页无法保存中文文档文件名；NSIS 使用简体中文/英文。
 - 原生测试使用独立 tests/library.rs；build.rs 给测试链接 Tauri 的 Common Controls v6 资源，避免 Windows 的 TaskDialogIndirect 入口缺失。应用和库的自动空测试已关闭，真实文件测试仍全部执行。
 - 搜索重建持有服务锁，极大目录的首次扫描可能需要等待；索引/已保存缓冲可限量。隔离 CSP/实际权限及生命周期由界面和 Rust 验证；可信模式仍拥有同页面完整能力。
-- 富文本仅规范化修改的块，特殊语法保留原源码；选区映射使用语法范围，扩展开关与行内代码决定是否隐藏标记。Fountain 预览/导出共用 fountain-js。
+- Markdown 与富文本共用 CodeMirror：Markdown 档只在活动行显示源码标记，其余行按语法树渲染；富文本档始终隐藏标记，工具栏按选区切换样式并直接写回 Markdown。表格、代码块、公式、图片在选区外渲染为只读块，点击/选中进入源码。Fountain 预览/导出共用 fountain-js。
+- GFM 表格后没有空行时，`@codemirror/lang-markdown` 会把后续普通段落并入 `Table` 节点；实时预览替换表格前必须按实际表格行裁剪范围（`tableRange`），否则会隐藏后续段落，且块高度把行点击映射串到表格。表格/代码等块 widget 的 `estimatedHeight` 应接近实际内容高度，避免后续行偏移。
+- CodeMirror 块级 widget 的高度映射按 border-box 测量，**不包含 margin**；不要给 `.cm-live-codeblock`、`.cm-live-rule`、`.cm-live-frontmatter` 等块 widget 加垂直 margin（用 padding、border 或背景代替），否则后续正文与行号会整体错位，点击标题行会串到下一行。
+- 完整路径复制只能在 Rust 侧写剪贴板：网页只拿到相对路径；不要把工作目录 root 或绝对路径返回给 WebView。目录选择器只列文件夹，移动文件夹时禁用其自身及子目录，避免把目录移入自身。
+- 文档列表与文件树的笔记右键菜单复用 `NoteMenuItems`；新增/调整笔记菜单项只改共享组件，避免两栏菜单再次漂移。文件树目录左键同时切换当前目录与展开状态；空白区域右键菜单固定创建在根目录。
+- 右键菜单不要用全屏 `context-backdrop` 拦截：遮罩会让第二次右键落空并弹出 WebView 原生菜单。用 `window` 的 `pointerdown`（捕获）+ Escape 关闭，并只忽略 `.context-menu` 内部点击；这样右键另一项会直接切换到新菜单。排序下拉同理不要依赖原生 `select`（WebView2 深色弹层不可控），用自定义菜单。
+- 编辑器活动行不要用不透明背景：它会盖住 CodeMirror 的选区层，导致选中文字无法分辨。活动行保持透明，用左侧细线/行号颜色提示；选区背景继续使用 `--selection`。
 - 图标由 docs/icons/_build.py 从 markfolio.svg 生成：无头 Edge 按 2048 渲染、洋红抠图后独立缩放；headless Edge 窗口高度比 `--window-size` 少约 92 px，脚本多开窗后再裁剪，避免底部截断。改图标后重跑脚本并核对 src-tauri/icons 与 docs/icons 输出一致。
 - 自定义标题栏下不要把快捷键交回原生菜单：WebView2 会先消费 Ctrl+P 等浏览器快捷键，且原生菜单加速键已关闭；核心命令统一走 App 的 keyboard 处理器，避免重复或漏触发。应用菜单的“退出”只显示系统级 `Alt+F4`，不再默认绑定 `Ctrl+Q`；`Alt+F4` 触发的是窗口关闭流程（受“关闭窗口时最小化到托盘”影响），菜单项本身仍直接请求退出。
 - `menu.json` 是菜单分组/标题的唯一来源：Rust 隐藏原生菜单与 React MenuBar 都读取它；新增核心命令时同时更新 coreCommands（执行/快捷键）与 menu.json（菜单位置），否则菜单栏不会出现该项。
 - `.workspace-columns` 内文件列表手柄的 `order` 必须取 `Math.min(listOrder, editorOrder) + 1`，不能写死为 1；写死会让手柄落到侧栏与文件列表之间，拖动时看似调整左栏、实际改变文件列表宽度。
 - 标题栏空白区用 data-tauri-drag-region="deep"；按钮、role=tab、菜单和窗口缩放手柄必须保持可交互或显式标记 data-tauri-drag-region="false"，否则会误触窗口拖动。
 - 关闭到托盘时不要 `await window.hide()` 并把拒绝当成失败：WebView2 隐藏后可能无法回传该 IPC 响应，隐藏实际已生效；应忽略 hide 的响应错误，否则会误报“关闭已取消：failed to send message to the webview”。
+- 外部工具必须按 `ahk_class Tauri Window` 定位主窗口：进程还有 `Tao Thread Event Target` 等辅助窗口，向 Tao 辅助窗口投递 `WM_CLOSE` 会销毁事件循环消息目标，表现为自定义 IPC 仍正常、所有 `plugin:window|*` 都报 `failed to send message to the webview`。
+- 外部 `WinShow` 只改 Win32 状态，不同步 Tao 的 `VISIBLE` 缓存，后续 `hide/maximize` 可能因状态无变化而失效。`lib.rs` 在 `Focused(true)` 且窗口实际可见时仅调用 `window.show()` 同步缓存；实际已隐藏时跳过，避免延迟焦点事件撤销隐藏。不要额外 `webview.show()` 或 `webview.set_focus()`。
 - 文件页签栏放在 list+editor 的 workspace-main 内，默认位于第 2+3 栏顶部；layoutOrder 仍控制 list/editor 顺序，关闭页签前先保存，避免静默丢失未保存内容。
 - 独立实现，未复制 Joplin/Obsidian 核心；源码插件移植需按各许可证审查。
 

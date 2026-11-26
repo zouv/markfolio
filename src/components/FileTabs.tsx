@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileText, Search, X } from "lucide-react";
+import { Copy, FileText, Search, X } from "lucide-react";
 import { t } from "../i18n";
 import { useApp } from "../store";
 import * as api from "../api";
@@ -123,7 +123,8 @@ export default function FileTabs({
             <button role="menuitem" className="app-menu-item" disabled={paths.length < 2} onClick={() => { closeMenu(); closeMany(paths.filter((path) => path !== menu.path)); }}><span><X size={15} />{t("关闭其他标签")}</span></button>
             <button role="menuitem" className="app-menu-item" onClick={() => { closeMenu(); closeMany(paths); }}><span><X size={15} />{t("关闭全部标签")}</span></button>
             <div className="app-menu-separator" role="separator" />
-            <button role="menuitem" className="app-menu-item" onClick={() => { closeMenu(); void navigator.clipboard.writeText(menu.path).then(() => state.setNotice(t("路径已复制"))).catch((error) => state.setNotice(displayError(error))); }}><span><FileText size={15} />{t("复制路径")}</span></button>
+            <button role="menuitem" className="app-menu-item" onClick={() => { closeMenu(); void navigator.clipboard.writeText(menu.path).then(() => state.setNotice(t("路径已复制"))).catch((error) => state.setNotice(displayError(error))); }}><span><FileText size={15} />{t("复制相对路径")}</span></button>
+            <button role="menuitem" className="app-menu-item" onClick={() => { closeMenu(); guard(async () => { await api.copyEntryPath(workspace, menu.path); state.setNotice(t("完整路径已复制")); }); }}><span><Copy size={15} />{t("复制完整路径")}</span></button>
             <button role="menuitem" className="app-menu-item" onClick={() => { closeMenu(); guard(() => api.revealEntry(workspace, menu.path)); }}><span><Search size={15} />{t("在资源管理器中定位")}</span></button>
           </div>
         </>

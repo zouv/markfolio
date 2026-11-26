@@ -142,7 +142,7 @@ export const defaultSettings: Settings = {
   sort: "name",
   perFolderSort:false,folderSorts:{},folderSort:"name",folderSortReverse:false,
   manualOrder: {}, listStyle: "cards", editorMode: "markdown", keyMode: "default",
-  spellcheck: false, inlineWidgets: false, htmlPaste: true,
+  spellcheck: false, inlineWidgets: true, htmlPaste: true,
   previewFontSize: 16, previewFontFamily: '"Microsoft YaHei", sans-serif', previewWidth: 860,
   customCss: "", rawHtml: true, remoteImages: false, zoom: 100,
   layoutOrder: "tree-list-editor", menuVisible: false, locale: "zh-CN",

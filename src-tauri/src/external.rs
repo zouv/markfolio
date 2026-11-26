@@ -113,6 +113,15 @@ impl Library {
             .insert((id.to_string(), path.to_string()));
         Ok(())
     }
+    pub fn copy_path(&self, id: &str, path: &str) -> Result<()> {
+        let file = self.resolve(id, path, true)?;
+        let mut clipboard = arboard::Clipboard::new()
+            .map_err(|_| AppError::new("CLIPBOARD", "无法访问系统剪贴板"))?;
+        clipboard
+            .set_text(file.to_string_lossy().into_owned())
+            .map_err(|_| AppError::new("CLIPBOARD", "无法复制完整路径"))?;
+        Ok(())
+    }
     pub fn reveal(&self, id: &str, path: &str) -> Result<()> {
         let file = self.resolve(id, path, true)?;
         #[cfg(target_os = "windows")]

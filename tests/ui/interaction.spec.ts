@@ -11,15 +11,16 @@ test("Ctrl 多选、Shift 范围选择和工作目录切换保留各自状态", 
   const options = page
     .getByRole("listbox", { name: "文档列表" })
     .getByRole("option");
+  const selected = page.locator('.document-card[aria-selected="true"]');
   await expect(options).toHaveCount(3);
   await options.nth(1).click({ modifiers: ["Control"] });
-  await expect(page.getByText("已选 2 项")).toBeVisible();
+  await expect(selected).toHaveCount(2);
   await options.nth(2).click({ modifiers: ["Shift"] });
-  await expect(page.getByText("已选 2 项")).toBeVisible();
+  await expect(selected).toHaveCount(2);
   await page.getByRole("tab", { name: /工作文档/ }).click();
-  await expect(page.getByText("已选 1 项")).toBeVisible();
+  await expect(selected).toHaveCount(1);
   await page.getByRole("tab", { name: /我的笔记/ }).click();
-  await expect(page.getByText("已选 2 项")).toBeVisible();
+  await expect(selected).toHaveCount(2);
 });
 test("设置草稿取消后不生效，应用后保留，关闭再打开读取已应用值", async ({
   page,

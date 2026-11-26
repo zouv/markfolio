@@ -1,6 +1,6 @@
 [package]
 name = "markfolio"
-version = "0.4.0"  # 版本号唯一出处；tauri.conf.json 省略 version 会回退到这里
+version = "0.5.0"  # 版本号唯一出处；tauri.conf.json 省略 version 会回退到这里
 description = "MarkFolio local Markdown workspace manager"
 edition = "2021"
 publish = false
@@ -30,6 +30,7 @@ sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
 trash = "5"
+arboard = "3"
 base64 = "0.22"
 serde_yaml = "0.9"
 regex = "1"

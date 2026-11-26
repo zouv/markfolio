@@ -5,14 +5,14 @@ import * as codeMirrorView from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { EditorState, Compartment, type Extension } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
+import { syntaxTree } from "@codemirror/language";
 import {
   undo,
   redo,
   indentMore,
   indentLess,
-  insertNewlineAndIndent,
   moveLineUp, moveLineDown, copyLineUp, copyLineDown, deleteLine, toggleComment,
   selectAll, selectLine, indentSelection,
 } from "@codemirror/commands";
@@ -25,7 +25,7 @@ import { writeAsset } from "./api";
 import { sortSelectedLines } from "./metadata";
 import { vim } from "@replit/codemirror-vim";
 import { emacs } from "@replit/codemirror-emacs";
-import { inlinePreviewExtension } from "./editorWidgets";
+import { livePreview } from "./livePreview";
 import { editTable,type TableAction } from "./tableEditing";
 
 const states = new Map<string, EditorState>();
@@ -34,10 +34,7 @@ const views = new Map<string, EditorView>();
 const pluginExtensions = new Map<string, Map<string, Extension>>();
 const configuration = new Compartment();
 const extensionConfiguration = new Compartment();
-const widgetConfiguration = new Compartment();
-type RichActions = { select():string; range():{from:number;to:number}; insert(text:string,before:string,after:string,replace:boolean):void; focus():void; command(name:string):void; find():void };
-const richEditors = new Map<string,RichActions>();
-export function registerRichEditor(workspace:string,path:string,actions:RichActions) { const id=key(workspace,path);richEditors.set(id,actions);return ()=>{richEditors.delete(id);}; }
+const liveConfiguration = new Compartment();
 const bookmarkEffect = codeMirrorState.StateEffect.define<{ id: string; from?: number; to?: number }>();
 const bookmarks = codeMirrorState.StateField.define<Map<string, { from: number; to: number }>>({
   create: () => new Map(),
@@ -78,8 +75,8 @@ function theme(settings: Settings): Extension {
           minWidth: "38px",
           padding: "0 8px",
         },
-        ".cm-activeLine": { background: "var(--active-line)" },
-        ".cm-activeLineGutter": { background: "transparent" },
+        ".cm-activeLine": { background: "transparent", boxShadow: "inset 2px 0 var(--border)" },
+        ".cm-activeLineGutter": { background: "transparent", color: "var(--text)" },
         ".cm-cursor": { borderLeftColor: "var(--text)" },
         ".cm-selectionBackground": {
           background: "var(--selection) !important",
@@ -99,10 +96,23 @@ function theme(settings: Settings): Extension {
 function extensionsFor(workspace: string): Extension[] {
   return [...(pluginExtensions.get(workspace)?.values() ?? [])];
 }
+function liveOptions(workspace: string, path: string, settings: Settings, readOnly: boolean) {
+  return {
+    workspace,
+    path,
+    mode: settings.editorMode,
+    math: settings.math,
+    rawHtml: settings.rawHtml,
+    extensions: settings.markdownExtensions,
+    inlineWidgets: settings.inlineWidgets,
+    readOnly,
+  };
+}
 function createEditorState(
   workspace: string,
   buffer: Buffer,
   settings: Settings,
+  readOnly = false,
 ): EditorState {
   const id = key(workspace, buffer.path);
   return EditorState.create({
@@ -110,13 +120,10 @@ function createEditorState(
     extensions: [
       basicSetup,
       bookmarks,
-      widgetConfiguration.of(settings.inlineWidgets?inlinePreviewExtension(workspace,buffer.path,settings.math):[]),
-      markdown({ codeLanguages: languages }),
+      liveConfiguration.of(livePreview(liveOptions(workspace, buffer.path, settings, readOnly))),
+      markdown({ base: markdownLanguage, codeLanguages: languages }),
       configuration.of(theme(settings)),
       extensionConfiguration.of(extensionsFor(workspace)),
-      keymap.of([
-        { key: "Enter", run: insertNewlineAndIndent },
-      ]),
       EditorView.domEventHandlers({
         paste(event, view) {
           if (view.state.readOnly) return false;
@@ -182,14 +189,177 @@ function historyAction(workspace: string, action: typeof undo) {
   });
 }
 
+function currentState(workspace: string, path: string): EditorState | undefined {
+  const view = views.get(key(workspace, path));
+  const session = useApp.getState().sessions[workspace];
+  const buffer = session?.documents[path];
+  if (!buffer) return undefined;
+  let state = view?.state ?? states.get(key(workspace, path));
+  if (!state || state.doc.toString() !== buffer.text) state = createEditorState(workspace, buffer, useApp.getState().settings, session.mutating);
+  return state;
+}
+function applyTransaction(workspace: string, path: string, transaction: codeMirrorState.Transaction) {
+  const view = views.get(key(workspace, path));
+  if (view) view.dispatch(transaction);
+  else {
+    states.set(key(workspace, path), transaction.state);
+    useApp.getState().edit(workspace, path, transaction.state.doc.toString());
+  }
+}
+function toggleInline(state: EditorState, marker: string, placeholder: string) {
+  const { from, to } = state.selection.main;
+  const doc = state.doc;
+  const before = doc.sliceString(Math.max(0, from - marker.length), from);
+  const after = doc.sliceString(to, Math.min(doc.length, to + marker.length));
+  const left = doc.sliceString(Math.max(0, from - 6), from);
+  const right = doc.sliceString(to, Math.min(doc.length, to + 6));
+  const leftRun = /(\*+)$/.exec(left)?.[1].length ?? 0;
+  const rightRun = /^(\*+)/.exec(right)?.[1].length ?? 0;
+  const wrapped =
+    marker === "**"
+      ? leftRun >= 2 && rightRun >= 2
+      : marker === "*"
+        ? leftRun % 2 === 1 && rightRun % 2 === 1
+        : before === marker && after === marker;
+  if (wrapped) {
+    return {
+      changes: [
+        { from: from - marker.length, to: from, insert: "" },
+        { from: to, to: to + marker.length, insert: "" },
+      ],
+      selection: { anchor: from - marker.length, head: to - marker.length },
+    };
+  }
+  if (from === to) {
+    const insert = marker + placeholder + marker;
+    return {
+      changes: { from, to, insert },
+      selection: { anchor: from + marker.length, head: from + marker.length + placeholder.length },
+    };
+  }
+  return {
+    changes: [
+      { from, to: from, insert: marker },
+      { from: to, to, insert: marker },
+    ],
+    selection: { anchor: from + marker.length, head: to + marker.length },
+  };
+}
+function linkNode(state: EditorState, from: number, to: number) {
+  let node = syntaxTree(state).resolveInner(from, 1);
+  while (node && node.name !== "Link") node = node.parent!;
+  return node && node.from <= from && node.to >= to ? node : null;
+}
+function toggleLink(state: EditorState) {
+  const { from, to } = state.selection.main;
+  const node = linkNode(state, from, to);
+  if (node) {
+    const changes: { from: number; to: number; insert: string }[] = [];
+    for (let child = node.firstChild; child; child = child.nextSibling)
+      if (["LinkMark", "URL", "LinkTitle"].includes(child.name)) changes.push({ from: child.from, to: child.to, insert: "" });
+    if (!changes.length) return null;
+    const changeSet = state.changes(changes);
+    return { changes, selection: state.selection.map(changeSet, 1) };
+  }
+  const label = t("链接文本"), url = t("链接地址");
+  if (from === to) {
+    const insert = `[${label}](${url})`;
+    return { changes: { from, to, insert }, selection: { anchor: from + 1, head: from + 1 + label.length } };
+  }
+  return {
+    changes: [
+      { from, to: from, insert: "[" },
+      { from: to, to, insert: `](${url})` },
+    ],
+    selection: { anchor: from + 1, head: to + 1 },
+  };
+}
+function toggleLinePrefix(state: EditorState, prefix: string, pattern: RegExp, alternates: RegExp[] = []) {
+  const { from, to } = state.selection.main;
+  const start = state.doc.lineAt(from).number;
+  const end = state.doc.lineAt(to).number;
+  const changes: { from: number; to?: number; insert: string }[] = [];
+  for (let number = start; number <= end; number++) {
+    const line = state.doc.line(number);
+    const indent = /^[ \t]*/.exec(line.text)![0];
+    const rest = line.text.slice(indent.length);
+    const match = pattern.exec(rest);
+    if (match) changes.push({ from: line.from + indent.length, to: line.from + indent.length + match[0].length, insert: "" });
+    else {
+      const alternate = alternates.map((alternatePattern) => alternatePattern.exec(rest)).find(Boolean);
+      changes.push(
+        alternate
+          ? { from: line.from + indent.length, to: line.from + indent.length + alternate[0].length, insert: prefix }
+          : { from: line.from + indent.length, insert: prefix },
+      );
+    }
+  }
+  const changeSet = state.changes(changes);
+  return { changes, selection: state.selection.map(changeSet, 1) };
+}
+function codeNode(state: EditorState, from: number, to: number) {
+  let node = syntaxTree(state).resolveInner(from, 1);
+  while (node && !["FencedCode", "CodeBlock"].includes(node.name)) node = node.parent!;
+  return node && node.from <= from && node.to >= to ? node : null;
+}
+function toggleCodeBlock(state: EditorState) {
+  const { from, to } = state.selection.main;
+  const doc = state.doc;
+  const node = codeNode(state, from, to);
+  if (node?.name === "FencedCode") {
+    const openEnd = doc.lineAt(node.from).to;
+    const closeStart = doc.lineAt(Math.max(node.from, node.to - 1)).from;
+    const changes: { from: number; to: number; insert: string }[] = [{ from: closeStart, to: node.to, insert: "" }];
+    if (openEnd < closeStart) changes.unshift({ from: node.from, to: openEnd + 1, insert: "" });
+    const changeSet = state.changes(changes);
+    return { changes, selection: state.selection.map(changeSet, 1) };
+  }
+  const start = doc.lineAt(from).from, end = doc.lineAt(to).to;
+  if (from === to) {
+    const before = from === 0 || doc.sliceString(from - 1, from) === "\n" ? "" : "\n";
+    const after = from === doc.length || doc.sliceString(from, from + 1) === "\n" ? "" : "\n";
+    const insert = `${before}\`\`\`\n${t("代码")}\n\`\`\`${after}`;
+    return { changes: { from, to, insert }, selection: { anchor: from + before.length + 4, head: from + before.length + 4 + t("代码").length } };
+  }
+  const changes = [
+    { from: start, to: start, insert: "```\n" },
+    { from: end, to: end, insert: "\n```" },
+  ];
+  const changeSet = state.changes(changes);
+  return { changes, selection: state.selection.map(changeSet, 1) };
+}
+function formatChange(state: EditorState, name: string) {
+  switch (name) {
+    case "bold": return toggleInline(state, "**", t("加粗文本"));
+    case "italic": return toggleInline(state, "*", t("斜体文本"));
+    case "code": return toggleInline(state, "`", t("代码"));
+    case "heading": return toggleLinePrefix(state, "## ", /^#{1,6}\s+/);
+    case "bullet": return toggleLinePrefix(state, "- ", /^(?![-+*]\s+\[[ xX]\]\s+)[-+*]\s+/, [/^[-+*]\s+\[[ xX]\]\s+/, /^\d+[.)]\s+/]);
+    case "numbered": return toggleLinePrefix(state, "1. ", /^\d+[.)]\s+/, [/^[-+*]\s+\[[ xX]\]\s+/, /^[-+*]\s+/]);
+    case "task": return toggleLinePrefix(state, "- [ ] ", /^[-+*]\s+\[[ xX]\]\s+/, [/^[-+*]\s+/, /^\d+[.)]\s+/]);
+    case "quote": return toggleLinePrefix(state, "> ", /^>\s?/);
+    case "link": return toggleLink(state);
+    case "codeBlock": return toggleCodeBlock(state);
+    case "rule": {
+      const { from, to } = state.selection.main, insert = "\n---\n";
+      return { changes: { from, to, insert }, selection: { anchor: from + insert.length, head: from + insert.length } };
+    }
+    case "table": {
+      const { from, to } = state.selection.main, insert = "\n| A | B |\n| --- | --- |\n|  |  |\n";
+      return { changes: { from, to, insert }, selection: { anchor: from + insert.length, head: from + insert.length } };
+    }
+    default: return null;
+  }
+}
+
 export const editorActions = {
   capture(workspace:string) {
     const session=useApp.getState().sessions[workspace];
     if(!session?.file||!session.documents[session.file]||session.mutating)return undefined;
-    const path=session.file,id=key(workspace,path),rich=richEditors.get(id);
-    let state=views.get(id)?.state??states.get(id);
-    if(!state||state.doc.toString()!==session.documents[path].text)state=createEditorState(workspace,session.documents[path],useApp.getState().settings);
-    const range=rich?.range()??state.selection.main;
+    const path=session.file,id=key(workspace,path);
+    const state=currentState(workspace,path);
+    if(!state)return undefined;
+    const range=state.selection.main;
     const token=crypto.randomUUID();
     const transaction=state.update({effects:bookmarkEffect.of({id:token,from:range.from,to:range.to})});
     const view=views.get(id);if(view)view.dispatch(transaction);else states.set(id,transaction.state);
@@ -208,18 +378,6 @@ export const editorActions = {
     const {workspace,path,token}=target,id=key(workspace,path);
     const view=views.get(id),current=view?.state??states.get(id);
     if(current){const transaction=current.update({effects:bookmarkEffect.of({id:token})});if(view)view.dispatch(transaction);else states.set(id,transaction.state);}
-  },
-  sourceCommand(workspace:string,path:string,name:string,from:number,to=from) {
-    const current=useApp.getState();const buffer=current.sessions[workspace]?.documents[path];
-    if(!buffer||current.sessions[workspace].mutating)return;
-    const id=key(workspace,path);let state=states.get(id);
-    if(!state||state.doc.toString()!==buffer.text)state=createEditorState(workspace,buffer,current.settings);
-    state=state.update({selection:{anchor:Math.max(0,Math.min(from,state.doc.length)),head:Math.max(0,Math.min(to,state.doc.length))}}).state;
-    const actions:Record<string,(view:EditorView)=>boolean>={moveLineUp,moveLineDown,copyLineUp,copyLineDown,deleteLine,toggleComment,indentMore,indentLess,selectAll,selectLine};
-    const target={state,dispatch(...specs:(codeMirrorState.Transaction|codeMirrorState.TransactionSpec)[]){const first=specs[0];state=first instanceof codeMirrorState.Transaction?first.state:state!.update(...specs as codeMirrorState.TransactionSpec[]).state;states.set(id,state);current.edit(workspace,path,state.doc.toString());},focus(){}};
-    if(name.startsWith("table"))target.dispatch({changes:editTable(buffer.text,from,name as TableAction),userEvent:"input"});
-    else if(name==="sortLines"||name==="sortLinesReverse")target.dispatch({changes:sortSelectedLines(buffer.text,from,to,name==="sortLinesReverse"),userEvent:"input"});
-    else actions[name]?.(target as unknown as EditorView);
   },
   change(workspace: string, path: string, from: number, to: number, insert: string) {
     const current = useApp.getState(); const session = current.sessions[workspace];
@@ -242,7 +400,6 @@ export const editorActions = {
   },
   command(workspace: string, name: string) {
     const session = useApp.getState().sessions[workspace];
-    const rich = session && richEditors.get(key(workspace,session.file));if(rich){rich.command(name);return;}
     const view = session && views.get(key(workspace, session.file));
     if (!view || view.state.readOnly) return;
     const actions: Record<string, (view: EditorView) => boolean> = { moveLineUp, moveLineDown, copyLineUp, copyLineDown, deleteLine, toggleComment, selectAll, selectLine, indentSelection, indentMore, indentLess };
@@ -250,6 +407,16 @@ export const editorActions = {
     else if (name === "sortLines" || name === "sortLinesReverse") view.dispatch({ changes: sortSelectedLines(view.state.doc.toString(), view.state.selection.main.from, view.state.selection.main.to, name === "sortLinesReverse") });
     else actions[name]?.(view);
     view.focus();
+  },
+  format(workspace: string, name: string) {
+    const session = useApp.getState().sessions[workspace];
+    if (!session?.file || session.mutating || useApp.getState().settings.mode === "preview") return;
+    const state = currentState(workspace, session.file);
+    if (!state || state.readOnly) return;
+    const result = formatChange(state, name);
+    if (!result) return;
+    applyTransaction(workspace, session.file, state.update({ ...result, userEvent: "input" }));
+    views.get(key(workspace, session.file))?.focus();
   },
   insert(
     workspace: string,
@@ -262,8 +429,6 @@ export const editorActions = {
     if (!session?.file) return;
     if (session.mutating) return;
     const id = key(workspace, session.file);
-    const rich = richEditors.get(id);
-    if (rich) { rich.insert(text,before,after,replace); return; }
     const view = views.get(id);
     let state = view?.state ?? states.get(id);
     if (!state) {
@@ -306,13 +471,11 @@ export const editorActions = {
   },
   find(workspace: string) {
     const session = useApp.getState().sessions[workspace];
-    const rich = session && richEditors.get(key(workspace,session.file));if(rich){rich.find();return;}
     const view = session && views.get(key(workspace, session.file));
     if (view) openSearchPanel(view);
   },
   select(workspace: string): string {
     const session = useApp.getState().sessions[workspace];
-    const rich = session && richEditors.get(key(workspace,session.file)); if(rich)return rich.select();
     const state =
       session &&
       (views.get(key(workspace, session.file))?.state ??
@@ -323,7 +486,6 @@ export const editorActions = {
   },
   focus(workspace: string) {
     const session = useApp.getState().sessions[workspace];
-    const rich = session && richEditors.get(key(workspace,session.file)); if(rich){rich.focus();return;}
     if (session) views.get(key(workspace, session.file))?.focus();
   },
   addExtension(workspace: string, pluginId: string, extension: Extension) {
@@ -375,7 +537,7 @@ export default function Editor({
     const id = key(workspace, buffer.path);
     let state = states.get(id);
     if (!state || state.doc.toString() !== buffer.text)
-      state = createEditorState(workspace, buffer, settings);
+      state = createEditorState(workspace, buffer, settings, readOnly);
     const view = new EditorView({ state, parent: container.current });
     views.set(id, view);
     viewRef.current = view;
@@ -398,7 +560,7 @@ export default function Editor({
         theme(settings),
         EditorState.readOnly.of(readOnly),
         EditorView.editable.of(!readOnly),
-      ]),widgetConfiguration.reconfigure(settings.inlineWidgets?inlinePreviewExtension(workspace,buffer.path,settings.math):[])],
+      ]), liveConfiguration.reconfigure(livePreview(liveOptions(workspace, buffer.path, settings, readOnly)))],
     });
   }, [settings, readOnly]);
   useEffect(() => {

@@ -708,5 +708,22 @@
   "基于 Tauri 2、Rust 与 React 构建。": "Built with Tauri 2, Rust and React.",
   "不可用": "Unavailable",
   "加载中…": "Loading…",
-  "作者": "Author"
+  "作者": "Author",
+  "反转": "Reverse",
+  "排序方式": "Sort by",
+  "切换摘要 / 详情": "Switch summary / details",
+  "新建目录": "New folder",
+  "在资源管理器中打开": "Open in Explorer",
+  "复制完整路径": "Copy full path",
+  "完整路径已复制": "Full path copied",
+  "复制名称": "Copy name",
+  "名称已复制": "Name copied",
+  "复制相对路径": "Copy relative path",
+  "在资源管理器中打开目录": "Open folder in Explorer",
+  "选择目标文件夹": "Choose destination folder",
+  "选择目标文件夹。": "Choose a destination folder.",
+  "选择目标文件夹，文件名保持不变。": "Choose a destination folder; the file name stays unchanged.",
+  "当前选择：{0}": "Selected: {0}",
+  "折叠": "Collapse",
+  "展开": "Expand"
 }

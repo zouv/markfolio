@@ -54,8 +54,8 @@ import {
 import Editor, { editorActions } from "./Editor";
 import { PluginButtons, PluginDialogs } from "./components/PluginContributions";
 import { checkReminders } from "./reminders";
-import RichEditor from "./RichEditor";
 import ToolWindow, { type ToolTarget } from "./components/ToolWindow";
+import DirectoryPicker from "./components/DirectoryPicker";
 import Preview from "./Preview";
 import {
   importPlugin,
@@ -209,7 +209,7 @@ export default function App() {
       next.type === "rename"
         ? fileName(next.path ?? "")
         : next.type === "move"
-          ? (next.path ?? "")
+          ? parentPath(next.path ?? "")
           : "",
     );
     setDialogError("");
@@ -551,18 +551,18 @@ export default function App() {
         if(!editorActions.insertCaptured(target,text))current.setNotice(t("原笔记选区已失效，请重新粘贴"));
         }finally{editorActions.discardCapture(target);}break;
       }
-      case "format.bold":editorActions.insert(ws,t("加粗文本"),"**","**");break;
-      case "format.italic":editorActions.insert(ws,t("斜体文本"),"*","*");break;
-      case "format.heading":editorActions.insert(ws,t("标题"),"## ");break;
-      case "format.link":editorActions.insert(ws,t("链接文本"),"[",t("](链接地址)"));break;
-      case "format.code":editorActions.insert(ws,t("代码"),"`","`");break;
-      case "format.codeBlock":editorActions.insert(ws,t("代码"),"```\n","\n```");break;
-      case "format.bullet":editorActions.insert(ws,t("列表项"),"- ");break;
-      case "format.numbered":editorActions.insert(ws,t("列表项"),"1. ");break;
-      case "format.task":editorActions.insert(ws,t("待办事项"),"- [ ] ");break;
-      case "format.quote":editorActions.insert(ws,t("引用"),"> ");break;
-      case "format.rule":editorActions.insert(ws,"\n---\n");break;
-      case "format.table":editorActions.insert(ws,"\n| A | B |\n| --- | --- |\n|  |  |\n");break;
+      case "format.bold":editorActions.format(ws,"bold");break;
+      case "format.italic":editorActions.format(ws,"italic");break;
+      case "format.heading":editorActions.format(ws,"heading");break;
+      case "format.link":editorActions.format(ws,"link");break;
+      case "format.code":editorActions.format(ws,"code");break;
+      case "format.codeBlock":editorActions.format(ws,"codeBlock");break;
+      case "format.bullet":editorActions.format(ws,"bullet");break;
+      case "format.numbered":editorActions.format(ws,"numbered");break;
+      case "format.task":editorActions.format(ws,"task");break;
+      case "format.quote":editorActions.format(ws,"quote");break;
+      case "format.rule":editorActions.format(ws,"rule");break;
+      case "format.table":editorActions.format(ws,"table");break;
       case "format.toc":if(active?.file)editorActions.insert(ws,createTOC(active.documents[active.file].text));break;
       case "focus.search":
         current.updateSettings({ showList: true });
@@ -694,14 +694,15 @@ export default function App() {
       if (
         dialog.type === "delete" ||
         dialog.type === "batch-delete" ||
+        dialog.type === "move" ||
         dialog.type === "batch-move"
       ) {
         const paths = dialog.paths ?? [path];
         const result = await operateFiles(
           id,
           paths,
-          dialog.type === "batch-move" ? "move" : "delete",
-          value.trim(),
+          dialog.type === "move" || dialog.type === "batch-move" ? "move" : "delete",
+          value,
         );
         useApp.getState().setNotice(batchSummary(result));
         if (result.failed.length) {
@@ -733,8 +734,7 @@ export default function App() {
             await useApp.getState().openDocument(id, destination);
           if(dialog.type==="new-todo"){editorActions.replaceDocument(id,destination,updateMetadata("",{type:"todo",todo:true,completed:false}));await useApp.getState().save(id,destination);}
         } else {
-          const destination =
-            dialog.type === "move" ? name : joinPath(parentPath(path), name);
+          const destination = joinPath(parentPath(path), name);
           await relocateBuffers(id, path, destination);
         }
       }
@@ -787,8 +787,7 @@ export default function App() {
     if (added) current.moveWorkspace(added, index);
   }
   const run = (id: string) => guard(() => dispatchRef.current(id));
-  const format = (before: string, after = "", placeholder = "") =>
-    editorActions.insert(state.active, placeholder, before, after);
+  const format = (name: string) => editorActions.format(state.active, name);
 
   return (
     <div className="app-shell">
@@ -838,10 +837,6 @@ export default function App() {
               >
                 <FileTree session={session} action={showDialog} /><TagSidebar session={session} />
                 <div className="sidebar-footer">
-                  <div className="workspace-indicator">
-                    <span className="green-dot" />
-                    <span>{t("本地工作目录")}</span>
-                  </div>
                   <button onClick={() => run("app.plugins")}>
                     <Puzzle size={15} />
                     {t("插件")}<ChevronRight size={13} />
@@ -858,7 +853,7 @@ export default function App() {
           <div className="workspace-main" style={{order: mainOrder}}>
             <FileTabs run={run} guard={guard} />
             <div className="workspace-columns">
-              {settings.showList && (<><DocumentList session={session} query={query} setQuery={setQuery} searchRef={searchRef} run={run} /><div className="resize-handle" style={{order:Math.min(listOrder, editorOrder)+1}} onPointerDown={event=>resize(event,"listWidth")} /></>)}
+              {settings.showList && (<><DocumentList session={session} query={query} setQuery={setQuery} searchRef={searchRef} run={run} action={showDialog} /><div className="resize-handle" style={{order:Math.min(listOrder, editorOrder)+1}} onPointerDown={event=>resize(event,"listWidth")} /></>)}
               <section className="document-area" style={{order: editorOrder}}>
             <div className="document-navigation">
               <div>
@@ -913,7 +908,6 @@ export default function App() {
               <>
                 <div className="document-title">
                   <div>
-                    <span className="file-type">MARKDOWN</span>
                     <h1
                       tabIndex={0}
                       title={t("双击重命名")}
@@ -943,38 +937,38 @@ export default function App() {
                   <div className="format-tools"><PluginButtons workspace={state.active} kind="toolbar" />
                     <IconButton
                       label={t("加粗")}
-                      onClick={() => format("**", "**", t("加粗文本"))}
+                      onClick={() => format("bold")}
                     >
                       <Bold size={15} />
                     </IconButton>
                     <IconButton
                       label={t("斜体")}
-                      onClick={() => format("*", "*", t("斜体文本"))}
+                      onClick={() => format("italic")}
                     >
                       <Italic size={15} />
                     </IconButton>
                     <IconButton
                       label={t("标题")}
-                      onClick={() => format("## ", "", t("标题"))}
+                      onClick={() => format("heading")}
                     >
                       <span className="heading-icon">H</span>
                     </IconButton>
                     <span className="toolbar-separator" />
                     <IconButton
                       label={t("插入链接")}
-                      onClick={() => format("[", t("](链接地址)"), t("链接文本"))}
+                      onClick={() => format("link")}
                     >
                       <Link size={15} />
                     </IconButton>
                     <IconButton
                       label={t("行内代码")}
-                      onClick={() => format("`", "`", t("代码"))}
+                      onClick={() => format("code")}
                     >
                       <Code2 size={16} />
                     </IconButton>
                     <IconButton
                       label={t("代码块")}
-                      onClick={() => format("```\n", "\n```", t("代码"))}
+                      onClick={() => format("codeBlock")}
                     >
                       <Braces size={16} />
                     </IconButton>
@@ -984,37 +978,39 @@ export default function App() {
                     <span className="toolbar-separator" />
                     <IconButton
                       label={t("无序列表")}
-                      onClick={() => format("- ", "", t("列表项"))}
+                      onClick={() => format("bullet")}
                     >
                       <List size={16} />
                     </IconButton>
                     <IconButton
                       label={t("有序列表")}
-                      onClick={() => format("1. ", "", t("列表项"))}
+                      onClick={() => format("numbered")}
                     >
                       <ListOrdered size={16} />
                     </IconButton>
                     <IconButton
                       label={t("待办")}
-                      onClick={() => format("- [ ] ", "", t("待办事项"))}
+                      onClick={() => format("task")}
                     >
                       <SquareCheck size={15} />
                     </IconButton>
                     <IconButton
                       label={t("引用")}
-                      onClick={() => format("> ", "", t("引用"))}
+                      onClick={() => format("quote")}
                     >
                       <Quote size={15} />
                     </IconButton>
                     <IconButton
                       label={t("分隔线")}
-                      onClick={() => format("\n---\n")}
+                      onClick={() => format("rule")}
                     >
                       <Minus size={16} />
                     </IconButton>
                   </div>
                   <div className="view-modes">
-                    <button title={t("Markdown / 富文本切换")} onClick={()=>state.updateSettings({editorMode:settings.editorMode==="markdown"?"rich":"markdown"})}>{settings.editorMode==="markdown"?t("富文本"):"Markdown"}</button>
+                    {settings.mode !== "preview" && (
+                      <button title={t("Markdown / 富文本切换")} onClick={()=>state.updateSettings({editorMode:settings.editorMode==="markdown"?"rich":"markdown"})}>{settings.editorMode==="markdown"?t("富文本"):"Markdown"}</button>
+                    )}
                     <IconButton
                       label={t("仅编辑")}
                       active={settings.mode === "editor"}
@@ -1059,12 +1055,12 @@ export default function App() {
                     {settings.mode !== "preview" && (
                       <div className="editor-pane">
                         <div className="pane-label">{t("编辑器")}</div>
-                        {settings.editorMode === "rich" ? <RichEditor key={`${state.active}:${buffer.path}`} workspace={state.active} buffer={buffer} settings={settings} readOnly={session.mutating}/> : <Editor
+                        <Editor
                           workspace={state.active}
                           buffer={buffer}
                           settings={settings}
                           readOnly={session.mutating}
-                        />}
+                        />
                       </div>
                     )}
                     {
@@ -1280,9 +1276,9 @@ export default function App() {
                   {dialog.type === "delete" || dialog.type === "batch-delete"
                     ? t(settings.trashMode==="app"?"{0} 项将移入应用垃圾箱，可以恢复。未保存的文件会保留。":"{0} 项将移入系统回收站，可以在系统中恢复。未保存的文件会保留。", dialog.paths?.length ?? 1)
                     : dialog.type === "batch-move"
-                      ? t("输入目标文件夹的相对路径。留空表示工作目录根目录，目标需已存在。")
+                      ? t("选择目标文件夹。")
                       : dialog.type === "move"
-                        ? t("输入相对于工作目录的目标路径，目标文件夹需已存在。")
+                        ? t("选择目标文件夹，文件名保持不变。")
                         : dialog.type === "rename"
                           ? t("重命名实际文件，正文内容保持原样。")
                           : t("创建位置：{0}", dialog.path || "工作目录根目录")}
@@ -1294,7 +1290,14 @@ export default function App() {
                     ))}
                   </ul>
                 )}
-                {dialog.type !== "delete" && dialog.type !== "batch-delete" && (
+                {(dialog.type === "move" || dialog.type === "batch-move") ? (
+                  <DirectoryPicker
+                    workspace={dialog.workspace ?? state.active}
+                    value={value}
+                    onChange={setValue}
+                    disabledPaths={dialog.type === "batch-move" ? dialog.paths ?? [] : [dialog.path ?? ""]}
+                  />
+                ) : dialog.type !== "delete" && dialog.type !== "batch-delete" && (
                   <input
                     className="text-input"
                     autoFocus

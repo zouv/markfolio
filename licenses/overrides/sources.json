@@ -1,5 +1,9 @@
 [
   {
+    "file": "BSL-1.0.txt",
+    "source": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/BSL-1.0.txt"
+  },
+  {
     "file": "MPL-2.0.txt",
     "source": "https://raw.githubusercontent.com/msiemens/onenote.rs/master/LICENSE"
   },
